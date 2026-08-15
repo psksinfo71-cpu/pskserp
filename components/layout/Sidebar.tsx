@@ -1,17 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { can, isReadOnlyRole, ROLE_LABELS } from '@/lib/permissions';
+import { supabase } from '@/lib/supabase/client';
+import { useOrgSettings } from '@/hooks/use-org-settings';
+import { toast } from 'sonner';
 import type { Role } from '@/lib/types';
 import {
   LayoutDashboard, Wallet, FileText, BookOpen, Scale, Landmark,
   Building2, FolderKanban, HeartHandshake, Users, ShieldCheck,
   Bell, Settings, PiggyBank, Receipt, ClipboardList, History,
-  ChevronLeft, X, ScrollText, Workflow, GitBranch,
+  ChevronLeft, X, ScrollText, Workflow, GitBranch, Upload, Loader2,
 } from 'lucide-react';
 interface NavItem {
   label: string;
@@ -85,8 +88,54 @@ interface SidebarProps {
 export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { profile } = useAuth();
+  const { logoUrl } = useOrgSettings();
+  const [sidebarLogo, setSidebarLogo] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const role = profile?.role ?? 'accountant';
   const collapsed = false;
+
+  useEffect(() => {
+    setSidebarLogo(logoUrl);
+  }, [logoUrl]);
+
+  const handleSidebarLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/svg+xml'].includes(file.type)) {
+      toast.error('Please select a PNG, JPG, or SVG logo');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Logo must be under 2MB');
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const extension = file.name.split('.').pop()?.toLowerCase() ?? 'png';
+      const path = `org-logo.${extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from('org-logos')
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (uploadError) throw uploadError;
+
+      const { data: publicData } = supabase.storage.from('org-logos').getPublicUrl(path);
+      const url = `${publicData.publicUrl}?t=${Date.now()}`;
+      const { error: settingError } = await supabase
+        .from('settings')
+        .upsert({ key: 'org_logo_url', value: url, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+      if (settingError) throw settingError;
+
+      setSidebarLogo(url);
+      toast.success('Logo uploaded successfully');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to upload logo');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
 
   const visibleGroups = NAV_GROUPS
     .filter((g) => !g.roles || g.roles.includes(role))
@@ -113,14 +162,40 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
       >
         <div className="flex h-16 items-center justify-between gap-2 border-b border-white/10 px-4">
           <Link href="/dashboard" className="flex items-center gap-2.5 overflow-hidden">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-              <Wallet className="h-5 w-5" />
+            <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-accent text-accent-foreground">
+              {sidebarLogo ? (
+                <img src={sidebarLogo} alt="Organization logo" className="h-full w-full object-contain bg-white" />
+              ) : (
+                <Wallet className="h-5 w-5" />
+              )}
             </div>
             {!collapsed && (
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold leading-tight">PSKS ERP</p>
                 <p className="truncate text-[10px] text-sidebar-foreground/60">Accounting &amp; Finance</p>
               </div>
+            )}
+            {role === 'super_admin' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  disabled={uploadingLogo}
+                  className="shrink-0 rounded-md p-1.5 text-sidebar-foreground/60 hover:bg-white/10 hover:text-sidebar-foreground disabled:opacity-50"
+                  title="Upload organization logo"
+                  aria-label="Upload organization logo"
+                >
+                  {uploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                </button>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml"
+                  className="hidden"
+                  onChange={handleSidebarLogoUpload}
+                  disabled={uploadingLogo}
+                />
+              </>
             )}
           </Link>
           <button
