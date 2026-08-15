@@ -94,6 +94,9 @@ export async function fetchBalanceSheetData(
   const liabilityLeaves = leafAccounts.filter((a) => a.account_type === 'liability');
   const equityLeaves = leafAccounts.filter((a) => a.account_type === 'equity');
 
+  const liveWdv = assetLeaves
+    .filter((a) => a.code.startsWith('11') || a.code.startsWith('12') || a.code.startsWith('110'))
+    .reduce((s, a) => s + balanceOf(a), 0);
   const totalAssets = assetLeaves.reduce((s, a) => s + balanceOf(a), 0);
   const totalLiabilities = liabilityLeaves.reduce((s, a) => s + balanceOf(a), 0);
   const explicitEquity = equityLeaves.reduce((s, a) => s + balanceOf(a), 0);
@@ -129,15 +132,7 @@ export async function fetchBalanceSheetData(
     if (acc?.account_type === 'expense') expMov += (Number(d.debit) || 0) - (Number(d.credit) || 0);
   }
   const surplus = (incomeOB + incMov) - (expenseOB + expMov);
-
-  const { data: cats } = await supabase
-    .from('asset_categories')
-    .select('opening_cost, transferred_cost, addition_cost, adjustment_cost, opening_depn, transferred_depn, depn_for_year, adjustment_depn');
-  const liveWdv = (cats ?? []).reduce((s: number, c: any) => {
-    const tc = Number(c.opening_cost) + Number(c.transferred_cost) + Number(c.addition_cost) - Number(c.adjustment_cost);
-    const ad = Number(c.opening_depn) + Number(c.transferred_depn) + Number(c.depn_for_year) - Number(c.adjustment_depn);
-    return s + (tc - ad);
-  }, 0);
+  const fundAccount = equityLeaves.find((a) => a.code === '3001') ?? equityLeaves[0];
 
   const rows: ReportRow[] = [];
   let sortOrder = 10;
@@ -196,6 +191,7 @@ export async function fetchBalanceSheetData(
           sectionTotal += bal;
         }
       }
+
     }
 
     if (sectionTotal !== 0) {
@@ -223,40 +219,40 @@ export async function fetchBalanceSheetData(
       for (const leaf of leaves) {
         if (addedIds.has(leaf.id)) continue;
         const bal = balanceOf(leaf);
-        if (bal === 0) continue;
+        const fundAdjustment = sec.section === 'FUND AND LIABILITIES' && leaf.id === fundAccount?.id
+          ? surplus
+          : 0;
+        const displayedBalance = bal + fundAdjustment;
+        if (displayedBalance === 0) continue;
         addedIds.add(leaf.id);
         rows.push({
           id: leaf.id,
           section: sec.section,
           particulars: leaf.name,
           this_month: 0,
-          this_year: bal,
+          this_year: displayedBalance,
           previous_year: 0,
           is_subtotal: false,
           sort_order: sortOrder,
         });
         sortOrder += 10;
-        sectionTotal += bal;
+        sectionTotal += displayedBalance;
       }
     }
 
-    if (sec.section === 'FUND AND LIABILITIES') {
-      const hasExplicitFund = equityLeaves.some((a) => balanceOf(a) !== 0);
-      if (!hasExplicitFund) {
-        const computedFund = totalAssets - totalLiabilities - explicitEquity + surplus;
-        rows.push({
-          id: 'computed-fund',
-          section: sec.section,
-          particulars: 'General Fund (Balancing Figure)',
-          this_month: 0,
-          this_year: computedFund,
-          previous_year: 0,
-          is_subtotal: false,
-          sort_order: sortOrder,
-        });
-        sortOrder += 10;
-        sectionTotal += computedFund;
-      }
+    if (sec.section === 'FUND AND LIABILITIES' && !fundAccount && surplus !== 0) {
+      rows.push({
+        id: 'computed-fund',
+        section: sec.section,
+        particulars: 'General Fund (Balancing Figure)',
+        this_month: 0,
+        this_year: surplus,
+        previous_year: 0,
+        is_subtotal: false,
+        sort_order: sortOrder,
+      });
+      sortOrder += 10;
+      sectionTotal += surplus;
     }
 
     if (sectionTotal !== 0) {

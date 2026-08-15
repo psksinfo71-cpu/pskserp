@@ -22,6 +22,7 @@ import { AccountCombobox } from '@/components/vouchers/AccountCombobox';
 import { filterProjectAccounts } from '@/lib/account-filter';
 import { VOUCHER_TYPES, VOUCHER_TYPE_MAP, hasControlAccount, isCashAccount, isBankAccount } from '@/lib/voucher-types';
 import { getAccountBalance } from '@/lib/queries';
+import { getLedgerHeadAccounts, isLedgerHeadAllowed } from '@/lib/voucher-account-filter';
 
 interface Line {
   id: string;
@@ -259,7 +260,10 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
   // Insufficient balance check: only for payment vouchers (money going out)
   const insufficientBalance = showControlAccount && typeDef.isPayment && accountBalance !== null && controlAmountNum > accountBalance;
 
-  const accountOptions = accounts;
+  const accountOptions = useMemo(
+    () => getLedgerHeadAccounts(accounts, voucherType),
+    [accounts, voucherType]
+  );
 
   const updateLine = (id: string, patch: Partial<Line>) => {
     setLines((prev) => prev.map((l) => {
@@ -297,6 +301,16 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
     setSaving(true);
     try {
       const allLines: { account_id: string; debit: number; credit: number; narration: string }[] = [];
+
+      const invalidLine = validLines.find((line) => {
+        const account = accounts.find((a) => a.id === line.account_id);
+        return !account || !isLedgerHeadAllowed(account, voucherType);
+      });
+      if (invalidLine) {
+        toast.error('The selected Ledger Head is not valid for this Voucher Type');
+        setSaving(false);
+        return;
+      }
 
       if (showControlAccount) {
         allLines.push({
@@ -481,7 +495,18 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label>Voucher Type</Label>
-                <Select value={voucherType} onValueChange={(v) => setVoucherType(v as VoucherTypeCode)}>
+                <Select value={voucherType} onValueChange={(v) => {
+                  const nextType = v as VoucherTypeCode;
+                  setVoucherType(nextType);
+                  setLines((previous) => previous.map((line) => (
+                    line.account_id && (() => {
+                      const selected = accounts.find((a) => a.id === line.account_id);
+                      return !selected || !isLedgerHeadAllowed(selected, nextType);
+                    })()
+                      ? { ...line, account_id: '' }
+                      : line
+                  )));
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{VOUCHER_TYPES.map((t) => <SelectItem key={t.code} value={t.code}>{t.label}</SelectItem>)}</SelectContent>
                 </Select>
