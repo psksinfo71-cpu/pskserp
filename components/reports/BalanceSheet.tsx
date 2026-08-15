@@ -1,6 +1,7 @@
 'use client';
 
 import { fmtAmt, fmtReportDate } from '@/lib/report-data';
+import { ReportHeader } from '@/components/shared/ReportHeader';
 
 export interface ReportRow {
   id: string;
@@ -83,11 +84,7 @@ export function BalanceSheet({ rows, asOnDate, projectName }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="text-center">
-        <p className="text-lg font-bold">Palashipara Samaj Kallayan Samity</p>
-        <p className="text-sm text-muted-foreground">Gangni, Meherpur — {projectName ?? 'General Fund'}</p>
-        <p className="text-base font-semibold">Balance Sheet as at {fmtReportDate(asOnDate)}</p>
-      </div>
+      <ReportHeader title={`Balance Sheet as at ${fmtReportDate(asOnDate)}`} />
       <div className="grid gap-6 lg:grid-cols-2">
         {renderTable('Property and Assets', assetRows, assetTotal)}
         {renderTable('Fund and Liabilities', liabilityRows, liabilityTotal)}

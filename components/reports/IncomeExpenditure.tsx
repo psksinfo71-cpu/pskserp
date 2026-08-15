@@ -72,12 +72,7 @@ function renderSection(section: IESection) {
 export function IncomeExpenditure({ income, expense, surplusMonth, surplusYear, toDate }: Props) {
   return (
     <div className="space-y-4">
-      <div className="text-center">
-        <p className="text-lg font-bold">Palashipara Samaj Kallayan Samity</p>
-        <p className="text-sm text-muted-foreground">Gangni, Meherpur — General Fund</p>
-        <p className="text-base font-semibold">Income &amp; Expenditure Account</p>
-        <p className="text-sm text-muted-foreground">For the period up to {fmtReportDate(toDate)}</p>
-      </div>
+      <ReportHeader title={`Income & Expenditure Account — For the period up to ${fmtReportDate(toDate)}`} />
       <div className="grid gap-6 lg:grid-cols-2">
         {renderSection(income)}
         {renderSection(expense)}

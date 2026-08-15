@@ -117,8 +117,7 @@ export function ReceiptsPayments({ rows, toDate }: Props) {
 
   return (
     <div className="space-y-4">
-      <ReportHeader title="Receipts & Payments Account" />
-      <p className="text-center text-sm text-muted-foreground">For the period up to {fmtReportDate(toDate)}</p>
+      <ReportHeader title={`Receipts & Payments Account — For the period up to ${fmtReportDate(toDate)}`} />
       <div className="grid gap-6 lg:grid-cols-2">
         {renderColumn('Receipts', receiptRows, grandReceiptMonth, grandReceiptYear, true, false)}
         {renderColumn('Payments', paymentRows, grandPaymentMonth, grandPaymentYear, false, true)}
