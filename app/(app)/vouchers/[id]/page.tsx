@@ -9,6 +9,7 @@ import { getVoucherTypeLabelWithLegacy } from '@/lib/voucher-types';
 import { Button } from '@/components/ui/button';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { ReportHeader } from '@/components/shared/ReportHeader';
 
 interface SignerInfo {
   profile: Profile | null;
@@ -104,14 +105,8 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
 
       {/* Printable voucher */}
       <div className="mx-auto max-w-3xl bg-white p-8 text-black print:p-0 print:shadow-none" id="print-area">
-        {/* Header */}
-        <div className="mb-6 border-b-2 border-black pb-4 text-center">
-          <h1 className="text-xl font-bold uppercase">Palashipara Samaj Kallayan Samity (PSKS)</h1>
-          <p className="text-sm text-gray-700">Gangni, Meherpur — General Fund</p>
-          <h2 className="mt-3 text-lg font-semibold uppercase underline">
-            {getVoucherTypeLabelWithLegacy(voucher.voucher_type)}
-          </h2>
-        </div>
+        <ReportHeader title={getVoucherTypeLabelWithLegacy(voucher.voucher_type)} />
+        <p className="mb-4 text-center text-sm text-gray-700">Gangni, Meherpur — General Fund</p>
 
         {/* Voucher meta */}
         <div className="mb-4 grid grid-cols-2 gap-4 text-sm">

@@ -3,7 +3,8 @@ CREATE OR REPLACE FUNCTION generate_voucher_no_preview(
   p_voucher_type text,
   p_project_id uuid,
   p_branch_id uuid,
-  p_office_type text
+  p_office_type text,
+  p_voucher_date date DEFAULT CURRENT_DATE
 ) RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -12,14 +13,15 @@ AS $$
 DECLARE
   v_fy text;
   v_seq integer;
+  v_date date := COALESCE(p_voucher_date, CURRENT_DATE);
   v_prefix text;
   v_branch_code text;
   v_running text;
 BEGIN
-  IF extract(month from now()) >= 7 THEN
-    v_fy := extract(year from now())::text || '-' || (extract(year from now()) + 1 - 2000)::text;
+  IF extract(month from v_date) >= 7 THEN
+    v_fy := extract(year from v_date)::text || '-' || (extract(year from v_date) + 1 - 2000)::text;
   ELSE
-    v_fy := (extract(year from now()) - 1)::text || '-' || (extract(year from now()) - 2000)::text;
+    v_fy := (extract(year from v_date) - 1)::text || '-' || (extract(year from v_date) - 2000)::text;
   END IF;
 
   SELECT last_seq INTO v_seq

@@ -26,7 +26,8 @@ CREATE OR REPLACE FUNCTION generate_voucher_no(
   p_project_id uuid,
   p_branch_id uuid,
   p_office_type text,
-  p_financial_year text DEFAULT NULL
+  p_financial_year text DEFAULT NULL,
+  p_voucher_date date DEFAULT CURRENT_DATE
 ) RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -45,10 +46,10 @@ BEGIN
     v_fy := p_financial_year;
   ELSE
     -- Derive from current date: July-Dec => FY starts this year, Jan-June => FY started previous year
-    IF extract(month from now()) >= 7 THEN
-      v_fy := extract(year from now())::text || '-' || (extract(year from now()) + 1 - 2000)::text;
+    IF extract(month from COALESCE(p_voucher_date, CURRENT_DATE)) >= 7 THEN
+      v_fy := extract(year from COALESCE(p_voucher_date, CURRENT_DATE))::text || '-' || (extract(year from COALESCE(p_voucher_date, CURRENT_DATE)) + 1 - 2000)::text;
     ELSE
-      v_fy := (extract(year from now()) - 1)::text || '-' || (extract(year from now()) - 2000)::text;
+      v_fy := (extract(year from COALESCE(p_voucher_date, CURRENT_DATE)) - 1)::text || '-' || (extract(year from COALESCE(p_voucher_date, CURRENT_DATE)) - 2000)::text;
     END IF;
   END IF;
 
@@ -81,7 +82,7 @@ END;
 $$;
 
 -- Grant execute to authenticated users
-GRANT EXECUTE ON FUNCTION generate_voucher_no(text, uuid, uuid, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION generate_voucher_no(text, uuid, uuid, text, text, date) TO authenticated;
 
 -- Grant insert/update on sequence table only via the function (SECURITY DEFINER)
 -- Revoke direct insert/update to prevent manual tampering

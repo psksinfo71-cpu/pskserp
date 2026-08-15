@@ -211,6 +211,7 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
           p_project_id: projectId || null,
           p_branch_id: profile?.branch_id ?? null,
           p_office_type: branchOfficeType,
+          p_voucher_date: voucherDate,
         });
         if (!error && data) setPreviewVoucherNo(data as string);
         else setPreviewVoucherNo('');
