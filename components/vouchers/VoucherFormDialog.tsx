@@ -23,6 +23,7 @@ import { filterProjectAccounts } from '@/lib/account-filter';
 import { VOUCHER_TYPES, VOUCHER_TYPE_MAP, hasControlAccount, isCashAccount, isBankAccount } from '@/lib/voucher-types';
 import { getAccountBalance } from '@/lib/queries';
 import { getLedgerHeadAccounts, isLedgerHeadAllowed } from '@/lib/voucher-account-filter';
+import { runFinancialAuditChecks, VoucherAuditError } from '@/lib/financial-audit';
 
 interface Line {
   id: string;
@@ -331,6 +332,15 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
       }
 
       const amount = grandDebit;
+      await runFinancialAuditChecks({
+        voucherId: editing?.id,
+        voucherDate,
+        amount,
+        lines: allLines,
+        userId: profile?.id,
+        userEmail: profile?.email,
+        mode: editing ? 'update' : 'insert',
+      });
       // Read the current database status instead of relying only on the row
       // captured when the edit dialog was opened. This prevents a posted
       // voucher from being accidentally changed to submitted after a stale
@@ -488,7 +498,7 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
       onOpenChange(false);
       onSaved();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(e instanceof VoucherAuditError ? e.message : (e as Error).message);
     } finally {
       setSaving(false);
     }

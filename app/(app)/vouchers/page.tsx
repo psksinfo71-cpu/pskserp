@@ -25,6 +25,7 @@ import { formatCurrency, formatDate } from '@/lib/format';
 import { exportToCSV, exportToExcel, printReport } from '@/lib/export';
 import { toast } from 'sonner';
 import { VOUCHER_TYPES, getVoucherTypeLabelWithLegacy } from '@/lib/voucher-types';
+import { runFinancialAuditChecks } from '@/lib/financial-audit';
 import {
   Plus, Search, FileText, Pencil, CheckCircle2, XCircle, Send, Lock, Eye, Trash2, Printer,
   FileSpreadsheet,
@@ -246,6 +247,22 @@ export default function VouchersPage() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    const { data: details, error: detailReadError } = await supabase.from('voucher_details').select('account_id, debit, credit').eq('voucher_id', deleteTarget.id);
+    if (detailReadError) { toast.error(detailReadError.message); return; }
+    try {
+      await runFinancialAuditChecks({
+        voucherId: deleteTarget.id,
+        voucherDate: deleteTarget.voucher_date,
+        amount: Number(deleteTarget.amount) || 0,
+        lines: (details ?? []).map((d) => ({ account_id: d.account_id, debit: Number(d.debit) || 0, credit: Number(d.credit) || 0 })),
+        userId: profile?.id,
+        userEmail: profile?.email,
+        mode: 'delete',
+      });
+    } catch (auditError) {
+      toast.error((auditError as Error).message);
+      return;
+    }
     const { error: delDetails } = await supabase.from('voucher_details').delete().eq('voucher_id', deleteTarget.id);
     if (delDetails) { toast.error(delDetails.message); return; }
     const { error: delVoucher } = await supabase.from('vouchers').delete().eq('id', deleteTarget.id);
