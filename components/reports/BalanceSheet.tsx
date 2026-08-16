@@ -36,9 +36,11 @@ export function BalanceSheet({ rows, asOnDate, projectName }: Props) {
     .reduce((s, r) => s + Number(r.this_year), 0);
   const diff = assetTotal - liabilityTotal;
 
-  const asOn = new Date(asOnDate + 'T00:00:00');
-  const fyStartYear = asOn.getMonth() + 1 <= 6 ? asOn.getFullYear() - 1 : asOn.getFullYear();
-  const prevYearEnd = `${fyStartYear - 1}-06-30`;
+  const asOn = new Date(`${asOnDate}T00:00:00`);
+  // Financial year: July 1 through June 30. For 31/07/2026, the
+  // comparative statement date is 30/06/2026.
+  const comparativeYear = asOn.getMonth() + 1 <= 6 ? asOn.getFullYear() - 1 : asOn.getFullYear();
+  const prevYearEnd = `${comparativeYear}-06-30`;
 
   const groupBySection = (list: ReportRow[]) => {
     const map = new Map<string, ReportRow[]>();

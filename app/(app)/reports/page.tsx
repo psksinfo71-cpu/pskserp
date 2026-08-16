@@ -67,7 +67,11 @@ export default function ReportsPage() {
       const data = await fetchIncomeExpenditureData(to, effectiveFromDate, activeProject?.id);
       setIeData(data);
     } else if (active === 'balance_sheet') {
-      const rows = await fetchBalanceSheetData(to, activeProject?.id, effectiveFromDate);
+      // A balance sheet is cumulative as at the selected end date. The range
+      // selector must not limit voucher movements to the selected month;
+      // otherwise July's opening balances and prior activity disappear and
+      // the August report can appear to be a copy of July.
+      const rows = await fetchBalanceSheetData(to, activeProject?.id);
       setReportRows(rows);
     } else if (active === 'receipts_payments') {
       const rpFrom = effectiveFromDate || `${new Date(to).getFullYear()}-${String(new Date(to).getMonth() + 1).padStart(2, '0')}-01`;
