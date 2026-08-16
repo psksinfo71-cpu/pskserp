@@ -36,9 +36,13 @@ export function BalanceSheet({ rows, asOnDate, projectName }: Props) {
     .reduce((s, r) => s + Number(r.this_year), 0);
   const diff = assetTotal - liabilityTotal;
 
-  const asOn = new Date(asOnDate + 'T00:00:00');
-  const fyStartYear = asOn.getMonth() + 1 <= 6 ? asOn.getFullYear() - 1 : asOn.getFullYear();
-  const prevYearEnd = `${fyStartYear - 1}-06-30`;
+  // The comparative column is the immediately preceding financial year-end.
+  // Bangladesh FY runs July 1 through June 30: for July 2026, the prior
+  // year-end is June 30, 2026 (not June 30, 2025).
+  const asOn = new Date(`${asOnDate}T00:00:00`);
+  const month = asOn.getMonth() + 1;
+  const comparativeYear = month <= 6 ? asOn.getFullYear() - 1 : asOn.getFullYear();
+  const prevYearEnd = `${comparativeYear}-06-30`;
 
   const groupBySection = (list: ReportRow[]) => {
     const map = new Map<string, ReportRow[]>();
@@ -52,6 +56,9 @@ export function BalanceSheet({ rows, asOnDate, projectName }: Props) {
 
   const renderTable = (title: string, list: ReportRow[], grandTotal: number) => {
     const grouped = groupBySection(list);
+    const comparativeTotal = list
+      .filter((r) => r.is_subtotal)
+      .reduce((sum, r) => sum + Number(r.previous_year || 0), 0);
     return (
       <div className="overflow-hidden rounded-md border border-border">
         <table className="w-full text-sm">
@@ -74,7 +81,7 @@ export function BalanceSheet({ rows, asOnDate, projectName }: Props) {
             <tr>
               <td className="px-3 py-2 text-sm font-bold">Total {title}</td>
               <td className="px-3 py-2 text-right font-mono text-sm font-bold tabular-nums">{fmtAmt(grandTotal)}</td>
-              <td className="px-3 py-2 text-right font-mono text-sm font-bold tabular-nums">-</td>
+              <td className="px-3 py-2 text-right font-mono text-sm font-bold tabular-nums">{fmtAmt(comparativeTotal)}</td>
             </tr>
           </tfoot>
         </table>
