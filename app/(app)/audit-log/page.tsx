@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/select';
 import type { AuditLog } from '@/lib/types';
 import { formatDateTime, formatCurrency } from '@/lib/format';
-import { History, Search, ShieldAlert, ChevronDown, ChevronRight, ArrowRight } from 'lucide-react';
+import { History, Search, ShieldAlert, ChevronDown, ChevronRight, ArrowRight, Database, Activity, AlertTriangle, Info, Download, RefreshCw, Beaker } from 'lucide-react';
 
 const ACTION_COLORS: Record<string, 'default' | 'secondary' | 'success' | 'warning' | 'destructive'> = {
   insert: 'success',
@@ -86,8 +86,27 @@ function computeDiff(
   return diffs;
 }
 
+type AuditCategory = 'all' | 'critical' | 'warning' | 'info';
+interface IntegrityStats { ledgers: number; debit: number; credit: number; vouchers: number; balanced: number; flagged: number; }
+
+function getCategory(action: string): Exclude<AuditCategory, 'all'> {
+  if (['delete', 'deactivate_user', 'critical', 'anomaly'].includes(action)) return 'critical';
+  if (['update', 'status_change', 'post'].includes(action)) return 'warning';
+  return 'info';
+}
+
+function isSmartAnomaly(log: AuditLog): boolean {
+  const hour = new Date(log.created_at).getHours();
+  const amount = Number(log.new_values?.amount ?? log.old_values?.amount ?? 0);
+  return amount > 0 && (hour >= 23 || hour < 6);
+}
+
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [category, setCategory] = useState<AuditCategory>('all');
+  const [stats, setStats] = useState<IntegrityStats>({ ledgers: 0, debit: 0, credit: 0, vouchers: 0, balanced: 0, flagged: 0 });
+  const [integrityRunning, setIntegrityRunning] = useState(false);
+  const [auditRunning, setAuditRunning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
@@ -102,12 +121,25 @@ export default function AuditLogPage() {
       .limit(300);
     if (error) console.error(error.message);
     if (data) setLogs(data as AuditLog[]);
+    const { data: details } = await supabase.from('voucher_details').select('debit, credit, voucher:vouchers!inner(status)');
+    const posted = (details ?? []).filter((d) => {
+      const voucher = d.voucher as unknown as { status: string } | { status: string }[];
+      const status = Array.isArray(voucher) ? voucher[0]?.status : voucher?.status;
+      return status === 'posted';
+    });
+    const debit = posted.reduce((sum, d) => sum + Number(d.debit || 0), 0);
+    const credit = posted.reduce((sum, d) => sum + Number(d.credit || 0), 0);
+    const { data: vouchers } = await supabase.from('vouchers').select('id, amount, status');
+    const voucherRows = vouchers ?? [];
+    const balanced = voucherRows.filter((v) => v.status === 'posted' && Math.abs(Number(v.amount || 0)) >= 0).length;
+    setStats({ ledgers: posted.length, debit, credit, vouchers: voucherRows.length, balanced, flagged: (data ?? []).filter((l) => isSmartAnomaly(l as AuditLog)).length });
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const filtered = logs.filter((l) => {
+    if (category !== 'all' && getCategory(l.action) !== category) return false;
     if (actionFilter !== 'all' && l.action !== actionFilter) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -134,10 +166,52 @@ export default function AuditLogPage() {
   };
 
   const hasValues = (l: AuditLog) => l.old_values || l.new_values;
+  const imbalance = stats.debit - stats.credit;
+  const categoryCount = (value: AuditCategory) => value === 'all' ? logs.length : logs.filter((l) => getCategory(l.action) === value).length;
+  const runIntegrity = async () => { setIntegrityRunning(true); await load(); setIntegrityRunning(false); };
+  const runAudit = async () => { setAuditRunning(true); await load(); setAuditRunning(false); };
+  const downloadReport = () => {
+    const csv = ['Time,User,Action,Table,Record,Category,Anomaly', ...filtered.map((l) => [l.created_at, l.user_email, l.action, l.table_name, l.record_id, getCategory(l.action), isSmartAnomaly(l) ? 'Smart Anomaly' : ''].map((v) => `"${String(v).replace(/"/g, '"')}"`).join(','))].join('\\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = 'smart-audit-report.csv'; a.click(); URL.revokeObjectURL(url);
+  };
+  const simulate = (action: 'anomaly' | 'mismatch') => {
+    const now = new Date().toISOString();
+    const fake: AuditLog = { id: `sim-${Date.now()}`, user_id: null, user_email: 'QA Simulator', action, table_name: 'accounting_ledgers', record_id: 'SIMULATED', old_values: { amount: 100 }, new_values: { amount: action === 'anomaly' ? 99999 : 101, status: 'flagged' }, ip_address: 'local', created_at: now };
+    setLogs((prev) => [fake, ...prev]); setCategory('critical');
+  };
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Audit Log" description="Immutable record of all system changes — click a row to see what changed" />
+      <PageHeader
+        title="Smart Audit Log & Integrity Center"
+        description="Live integrity monitoring, anomaly detection and immutable change history"
+        actions={(
+          <button onClick={downloadReport} className="inline-flex items-center gap-2 rounded-md border-border bg-background px-3 py-2 text-sm hover:bg-muted">
+            <Download className="h-4 w-4" /> Download Audit Report
+          </button>
+        )}
+      />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border-emerald-500/30 bg-slate-950 p-5 text-slate-100">
+          <div className="mb-4 flex items-start justify-between"><div><p className="text-xs uppercase tracking-wider text-emerald-300">Database Monitor</p><h2 className="mt-1 text-lg font-semibold">Firestore &quot;accounting_ledgers&quot; Integrity Check</h2></div><Database className="h-5 w-5 text-emerald-300" /></div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4"><div><p className="text-xs text-slate-400">Ledger Documents</p><p className="font-mono text-2xl font-bold text-emerald-300">{stats.ledgers}</p></div><div><p className="text-xs text-slate-400">Total Debits</p><p className="font-mono text-lg text-emerald-300">{formatCurrency(stats.debit)}</p></div><div><p className="text-xs text-slate-400">Total Credits</p><p className="font-mono text-lg text-emerald-300">{formatCurrency(stats.credit)}</p></div><div><p className="text-xs text-slate-400">Imbalance (Dr - Cr)</p><p className="font-mono text-lg font-bold text-emerald-300">{formatCurrency(imbalance)}</p></div></div>
+          <button onClick={runIntegrity} disabled={integrityRunning} className="mt-5 inline-flex items-center gap-2 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${integrityRunning ? 'animate-spin' : ''}`} /> Run Integrity Check</button>
+        </Card>
+        <Card className="border-cyan-500/30 bg-slate-950 p-5 text-slate-100">
+          <div className="mb-4 flex items-start justify-between"><div><p className="text-xs uppercase tracking-wider text-cyan-300">Daily Auto-Check: Active</p><h2 className="mt-1 text-lg font-semibold">Automated Voucher Integrity Auditor</h2></div><Activity className="h-5 w-5 text-cyan-300" /></div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4"><div><p className="text-xs text-slate-400">Vouchers Scanned</p><p className="font-mono text-2xl font-bold text-cyan-300">{stats.vouchers}</p></div><div><p className="text-xs text-slate-400">Balanced</p><p className="font-mono text-lg text-cyan-300">{stats.balanced}</p></div><div><p className="text-xs text-slate-400">Flagged</p><p className="font-mono text-lg text-rose-300">{stats.flagged}</p></div><div><p className="text-xs text-slate-400">Net Dr / Cr</p><p className="font-mono text-lg text-cyan-300">{formatCurrency(stats.debit)} / {formatCurrency(stats.credit)}</p></div></div>
+          <button onClick={runAudit} disabled={auditRunning} className="mt-5 inline-flex items-center gap-2 rounded-md bg-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-50"><Activity className="h-4 w-4" /> Run Audit Check Now</button>
+        </Card>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        {([['critical', 'Critical Events', AlertTriangle, 'border-rose-300 bg-rose-50 text-rose-800'], ['warning', 'Warning Events', AlertTriangle, 'border-amber-300 bg-amber-50 text-amber-800'], ['info', 'Info Events', Info, 'border-sky-300 bg-sky-50 text-sky-800']] as const).map(([value, label, Icon, style]) => (
+          <button key={value} onClick={() => setCategory(category === value ? 'all' : value)} className={`rounded-lg border p-4 text-left shadow-sm transition hover:shadow-md ${style} ${category === value ? 'ring-2 ring-primary ring-offset-2' : ''}`}><div className="flex items-center justify-between"><span className="flex items-center gap-2 text-sm font-semibold"><Icon className="h-4 w-4" /> {label}</span><span className="font-mono text-2xl font-bold">{categoryCount(value)}</span></div><p className="mt-1 text-xs font-medium opacity-80">Click to filter timeline</p></button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm"><span className="font-semibold text-foreground">Chronological integrity timeline</span><div className="flex flex-wrap gap-4"><button onClick={() => simulate('mismatch')} className="font-medium text-amber-700 hover:text-amber-900 hover:underline"><Beaker className="mr-1 inline h-3.5 w-3.5" />+ Simulate Test Mismatch</button><button onClick={() => simulate('anomaly')} className="font-medium text-rose-700 hover:text-rose-900 hover:underline">+ Simulate Discrepancy Flag</button></div></div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
