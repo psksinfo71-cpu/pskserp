@@ -54,6 +54,11 @@ export function BalanceSheet({ rows, asOnDate, projectName }: Props) {
 
   const renderTable = (title: string, list: ReportRow[], grandTotal: number) => {
     const grouped = groupBySection(list);
+    // Comparative totals are already calculated by the data layer's section
+    // subtotal rows. Sum those rows instead of summing detail rows again.
+    const comparativeTotal = list
+      .filter((r) => r.is_subtotal)
+      .reduce((sum, r) => sum + Number(r.previous_year || 0), 0);
     return (
       <div className="overflow-hidden rounded-md border border-border">
         <table className="w-full text-sm">
@@ -76,7 +81,7 @@ export function BalanceSheet({ rows, asOnDate, projectName }: Props) {
             <tr>
               <td className="px-3 py-2 text-sm font-bold">Total {title}</td>
               <td className="px-3 py-2 text-right font-mono text-sm font-bold tabular-nums">{fmtAmt(grandTotal)}</td>
-              <td className="px-3 py-2 text-right font-mono text-sm font-bold tabular-nums">-</td>
+              <td className="px-3 py-2 text-right font-mono text-sm font-bold tabular-nums">{fmtAmt(comparativeTotal)}</td>
             </tr>
           </tfoot>
         </table>
