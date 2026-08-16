@@ -213,8 +213,11 @@ export default function ChartOfAccountsPage() {
           targetId = cloneData.id;
           isCloned = true;
         } else {
-          // Either it's already a project clone, or we're in global mode (no project selected)
-          const { error } = await supabase.from('chart_of_accounts').update(payload).eq('id', editing.id);
+          // A project must only update its own clone. Global accounts are
+          // cloned above, so edits in Epic can never mutate General Fund.
+          let updateQuery = supabase.from('chart_of_accounts').update(payload).eq('id', editing.id);
+          if (activeProject) updateQuery = updateQuery.eq('project_id', activeProject.id);
+          const { error } = await updateQuery;
           if (error) throw error;
         }
 
@@ -307,20 +310,33 @@ export default function ChartOfAccountsPage() {
   };
 
   const toggleActive = async (acc: ChartAccount) => {
-    const { error } = await supabase
-      .from('chart_of_accounts')
-      .update({ is_active: !acc.is_active })
-      .eq('id', acc.id);
-    if (error) { toast.error(error.message); return; }
-    await logAudit({
-      action: 'update',
-      table_name: 'chart_of_accounts',
-      record_id: acc.id,
-      old_values: { is_active: acc.is_active },
-      new_values: { is_active: !acc.is_active },
-    });
-    toast.success(`Account ${acc.is_active ? 'deactivated' : 'activated'}`);
-    load();
+    try {
+      let targetId = acc.id;
+      let isCloned = false;
+      if (activeProject && !acc.project_id && !acc.cloned_from_id) {
+        const { data, error } = await supabase.from('chart_of_accounts').insert({
+          code: acc.code, name: acc.name, account_type: acc.account_type,
+          parent_id: acc.parent_id, is_group: acc.is_group,
+          is_active: !acc.is_active, description: acc.description,
+          opening_balance: 0, project_id: activeProject.id, cloned_from_id: acc.id,
+        }).select().single();
+        if (error) throw error;
+        targetId = data.id;
+        isCloned = true;
+      } else {
+        let updateQuery = supabase.from('chart_of_accounts').update({ is_active: !acc.is_active }).eq('id', acc.id);
+        if (activeProject) updateQuery = updateQuery.eq('project_id', activeProject.id);
+        const { error } = await updateQuery;
+        if (error) throw error;
+      }
+      await logAudit({
+        action: 'update', table_name: 'chart_of_accounts', record_id: targetId,
+        old_values: { is_active: acc.is_active, project: activeProject?.name ?? 'General', cloned: isCloned },
+        new_values: { is_active: !acc.is_active, project: activeProject?.name ?? 'General', cloned: isCloned },
+      });
+      toast.success(isCloned ? 'Account customized for this project' : `Account ${acc.is_active ? 'deactivated' : 'activated'}`);
+      load();
+    } catch (e) { toast.error((e as Error).message); }
   };
 
   const parentOptions = useMemo(() => accounts.filter((a) => a.id !== editing?.id), [accounts, editing]);
