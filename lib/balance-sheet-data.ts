@@ -24,54 +24,6 @@ const LIABILITY_SECTIONS: BSSectionDef[] = [
   { section: 'CURRENT LIABILITIES', accountType: 'liability', groupCodes: ['20', '200', '201', '202', '210'] },
 ];
 
-const GENERAL_FUND_PROJECT_ID = '83e3a2cf-f80e-4e03-a96e-80ad1ed70e65';
-const SEEDED_BALANCE_SHEET: Record<string, Array<Omit<ReportRow, 'previous_year'>>> = {
-  '2026-07-31': [
-    { id: 'fa-wdv', section: 'PROPERTY AND ASSETS', particulars: 'Fixed Assets (Note 1.00)', this_month: 0, this_year: 4301989, is_subtotal: false, sort_order: 10 },
-    { id: 'pbs', section: 'CURRENT ASSETS', particulars: 'Security Money to PBS (Note 2.00)', this_month: 0, this_year: 11314, is_subtotal: false, sort_order: 20 },
-    { id: 'loan-to-fund', section: 'CURRENT ASSETS', particulars: 'Loan to Different Fund (Note 3.00)', this_month: 0, this_year: 0, is_subtotal: false, sort_order: 30 },
-    { id: 'fdr', section: 'CURRENT ASSETS', particulars: 'Fixed Deposit Investment (FDR) (Note 4.00)', this_month: 0, this_year: 2340225, is_subtotal: false, sort_order: 40 },
-    { id: 'tax', section: 'CURRENT ASSETS', particulars: 'Advance Income Tax (Note 5.00)', this_month: 0, this_year: 16693, is_subtotal: false, sort_order: 50 },
-    { id: 'fdr-interest', section: 'CURRENT ASSETS', particulars: 'Interest on FDR (Note 6.00)', this_month: 0, this_year: -150, is_subtotal: false, sort_order: 60 },
-    { id: 'cash-bank', section: 'CURRENT ASSETS', particulars: 'Cash and Bank Balance (Note 7.00)', this_month: 0, this_year: 844295, is_subtotal: false, sort_order: 70 },
-    { id: 'current-assets-total', section: 'CURRENT ASSETS', particulars: 'Total Current Assets', this_month: 0, this_year: 3212377, is_subtotal: true, sort_order: 80 },
-    { id: 'assets-total', section: 'PROPERTY AND ASSETS', particulars: 'Total Property and Assets', this_month: 0, this_year: 7514366, is_subtotal: true, sort_order: 90 },
-    { id: 'fund', section: 'FUND AND LIABILITIES', particulars: 'Fund Account (Note 8.00)', this_month: 0, this_year: 7498366, is_subtotal: false, sort_order: 100 },
-    { id: 'security-deposit', section: 'CURRENT LIABILITIES', particulars: 'Security Deposit (Husking Mill) (Note 9.00)', this_month: 0, this_year: 10000, is_subtotal: false, sort_order: 110 },
-    { id: 'staff-security', section: 'CURRENT LIABILITIES', particulars: 'Staff Security Money (Note 10.00)', this_month: 0, this_year: 0, is_subtotal: false, sort_order: 120 },
-    { id: 'loan-from-fund', section: 'CURRENT LIABILITIES', particulars: 'Loan from Different Fund (Note 11.00)', this_month: 0, this_year: 0, is_subtotal: false, sort_order: 130 },
-    { id: 'audit-fees', section: 'CURRENT LIABILITIES', particulars: 'Provision for Audit Fees (Note 12.00)', this_month: 0, this_year: 6000, is_subtotal: false, sort_order: 140 },
-    { id: 'liabilities-total', section: 'CURRENT LIABILITIES', particulars: 'Total Current Liabilities', this_month: 0, this_year: 16000, is_subtotal: true, sort_order: 150 },
-    { id: 'fund-liabilities-total', section: 'FUND AND LIABILITIES', particulars: 'Total Fund and Liabilities', this_month: 0, this_year: 7514366, is_subtotal: true, sort_order: 160 },
-  ],
-  '2026-06-30': [],
-};
-
-const JUNE_VALUES: Record<string, number> = {
-  'fa-wdv': 4301989, pbs: 11314, 'loan-to-fund': 0, fdr: 2340225, tax: 16693,
-  'fdr-interest': -150, 'cash-bank': 796683, 'current-assets-total': 3164765,
-  'assets-total': 7466754, fund: 7450754, 'security-deposit': 10000,
-  'staff-security': 0, 'loan-from-fund': 0, 'audit-fees': 6000,
-  'liabilities-total': 16000, 'fund-liabilities-total': 7466754,
-};
-SEEDED_BALANCE_SHEET['2026-06-30'] = SEEDED_BALANCE_SHEET['2026-07-31'].map((row) => ({
-  ...row,
-  this_year: JUNE_VALUES[row.id] ?? row.this_year,
-}));
-
-function seededBalanceSheetRows(asOnDate: string, projectId?: string | null): ReportRow[] | null {
-  // The local/demo database can use a different project UUID than the supplied
-  // production seed. Match the dated statement by date so the active report
-  // remains visible locally for the selected General Fund-style project.
-  if (!SEEDED_BALANCE_SHEET[asOnDate]?.length) return null;
-  const comparativeDate = asOnDate === '2026-07-31' ? '2026-06-30' : undefined;
-  const comparative = comparativeDate ? SEEDED_BALANCE_SHEET[comparativeDate] : [];
-  return SEEDED_BALANCE_SHEET[asOnDate].map((row) => ({
-    ...row,
-    previous_year: comparative.find((candidate) => candidate.id === row.id)?.this_year ?? 0,
-  }));
-}
-
 /** Fetch posted voucher-detail movements, optionally filtered by project and date range. */
 async function fetchMovementsForProject(asOnDate: string, projectId?: string | null, fromDate?: string): Promise<MovementMap> {
   let q = supabase
@@ -97,9 +49,6 @@ export async function fetchBalanceSheetData(
   projectId?: string | null,
   fromDate?: string
 ): Promise<ReportRow[]> {
-  const seededRows = seededBalanceSheetRows(asOnDate, projectId);
-  if (seededRows) return seededRows;
-
   let accQ = supabase
     .from('chart_of_accounts')
     .select('*')
@@ -109,41 +58,6 @@ export async function fetchBalanceSheetData(
   if (projectId) accQ = accQ.or(`project_id.is.null,project_id.eq.${projectId}`);
   const { data: accountsRaw } = await accQ;
   const accounts = filterProjectAccounts((accountsRaw ?? []) as ChartAccount[], projectId);
-
-  // Prefer dated balance-sheet snapshots when one has been seeded for the selected project/date.
-  // This preserves the supplied statement values while the live GL remains the fallback.
-  const previousDate = new Date(`${asOnDate}T00:00:00`);
-  previousDate.setDate(0);
-  const previousDateString = previousDate.toISOString().slice(0, 10);
-  let snapshotQuery = supabase
-    .from('financial_report_data')
-    .select('id, section, particulars, this_year, previous_year, is_subtotal, sort_order, as_on_date')
-    .eq('report_type', 'balance_sheet')
-    .eq('as_on_date', asOnDate)
-    .order('sort_order');
-  if (projectId) snapshotQuery = snapshotQuery.eq('project_id', projectId);
-  const { data: snapshotRows } = await snapshotQuery;
-  if (snapshotRows && snapshotRows.length > 0) {
-    const { data: comparativeRows } = await supabase
-      .from('financial_report_data')
-      .select('section, particulars, this_year')
-      .eq('report_type', 'balance_sheet')
-      .eq('as_on_date', previousDateString)
-      .eq('project_id', projectId ?? '');
-    const comparative = new Map((comparativeRows ?? []).map((row) => [`${row.section}:${row.particulars}`, Number(row.this_year) || 0]));
-    return snapshotRows
-      .filter((row) => !row.particulars.endsWith(' TAKA'))
-      .map((row) => ({
-        id: row.id,
-        section: row.section,
-        particulars: row.particulars,
-        this_month: 0,
-        this_year: Number(row.this_year) || 0,
-        previous_year: comparative.get(`${row.section}:${row.particulars}`) ?? (Number(row.previous_year) || 0),
-        is_subtotal: row.particulars.endsWith(' TAKA'),
-        sort_order: row.sort_order,
-      }));
-  }
 
   const movements = await fetchMovementsForProject(asOnDate, projectId, fromDate);
 
