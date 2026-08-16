@@ -87,7 +87,7 @@ export default function ReportsPage() {
       setVouchers((vdata ?? []) as any[]);
     }
     setLoading(false);
-  }, [active, from, to, activeProject, effectiveFromDate]);
+  }, [active, to, activeProject, effectiveFromDate]);
 
   useEffect(() => {
     loadData();

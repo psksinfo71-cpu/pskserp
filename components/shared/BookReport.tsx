@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
 import type { ChartAccount } from '@/lib/types';
@@ -47,16 +47,16 @@ export function BookReport({ title, description, accountType }: BookReportProps)
     });
   }, [accountType, activeProject]);
 
-  const run = async () => {
+  const run = useCallback(async () => {
     if (!accountId) return;
     setLoading(true); setSearched(true);
     try {
       const r = await getAccountLedger(accountId, { from: from || undefined, to: to || undefined, projectId: activeProject?.id });
       setRows(r.rows); setOpening(r.opening);
     } finally { setLoading(false); }
-  };
+  }, [accountId, activeProject, from, to]);
 
-  useEffect(() => { if (accountId) run(); }, [accountId, activeProject]);
+  useEffect(() => { if (accountId) run(); }, [accountId, run]);
 
   const account = accounts.find((a) => a.id === accountId);
   const totalDebit = rows.reduce((s, r) => s + r.debit, 0);

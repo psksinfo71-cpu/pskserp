@@ -138,7 +138,7 @@ export default function VouchersPage() {
     } else {
       setProjectFilter('all');
     }
-  }, [role, activeProject?.id]);
+  }, [role, activeProject]);
 
   // Super admin: load all projects for filtering
   useEffect(() => {

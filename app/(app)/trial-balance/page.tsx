@@ -21,16 +21,15 @@ export default function TrialBalancePage() {
   const [toDate, setToDate] = useState(toInputDate(new Date()));
   const [selectedMonth, setSelectedMonth] = useState('');
 
-  const effectiveRange = filterMode === 'as_on'
-    ? { to: asOnDate }
-    : { from: fromDate || undefined, to: toDate };
-
   useEffect(() => {
+    const effectiveRange = filterMode === 'as_on'
+      ? { to: asOnDate }
+      : { from: fromDate || undefined, to: toDate };
     setLoading(true);
     getTrialBalance(activeProject?.id, effectiveRange)
       .then((r) => { setRows(r.rows); setTotalDebit(r.totalDebit); setTotalCredit(r.totalCredit); })
       .finally(() => setLoading(false));
-  }, [activeProject, filterMode, asOnDate, fromDate, toDate, selectedMonth]);
+  }, [activeProject, filterMode, asOnDate, fromDate, toDate]);
 
   const handleMonthChange = (m: string) => {
     setSelectedMonth(m);

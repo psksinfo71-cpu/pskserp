@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Wallet, ShieldCheck, Lock, Loader2, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrgSettings } from '@/hooks/use-org-settings';
+import Image from 'next/image';
 
 export default function LoginPage() {
   const { signIn, session, loading } = useAuth();
@@ -25,7 +26,7 @@ export default function LoginPage() {
   }, [loading, session, router]);
 
   const BrandIcon = ({ className }: { className?: string }) =>
-    logoUrl ? <img src={logoUrl} alt="Logo" className={className} /> : <Wallet className={className} />;
+    logoUrl ? <Image src={logoUrl} alt="Logo" width={64} height={64} className={className} /> : <Wallet className={className} />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

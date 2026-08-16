@@ -118,7 +118,7 @@ export default function BudgetPage() {
   }, [filters, tab]);
 
   useEffect(() => { loadMeta(); loadExistingBudgets(); }, [loadMeta, loadExistingBudgets]);
-  useEffect(() => { if (filters.fiscalYearId && filters.projectId) loadReports(); }, [loadReports]);
+  useEffect(() => { if (filters.fiscalYearId && filters.projectId) loadReports(); }, [filters.fiscalYearId, filters.projectId, loadReports]);
 
   const selectedFy = fys.find((f) => f.id === filters.fiscalYearId);
   const selectedProject = projects.find((p) => p.id === filters.projectId);

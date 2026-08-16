@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -164,7 +165,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           <Link href="/dashboard" className="flex items-center gap-2.5 overflow-hidden">
             <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-accent text-accent-foreground">
               {sidebarLogo ? (
-                <img src={sidebarLogo} alt="Organization logo" className="h-full w-full object-contain bg-white" />
+                <Image src={sidebarLogo} alt="Organization logo" width={48} height={48} className="h-full w-full object-contain bg-white" />
               ) : (
                 <Wallet className="h-5 w-5" />
               )}

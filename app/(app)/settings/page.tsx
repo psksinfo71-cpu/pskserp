@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Sun, Moon, Save, Building2, SlidersHorizontal, Upload, Trash2, Loader2, ImageIcon } from 'lucide-react';
+import Image from 'next/image';
 import { toast } from 'sonner';
 import type { Setting } from '@/lib/types';
 
@@ -101,7 +102,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-4">
                 <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-border bg-muted/30">
                   {settings.org_logo_url ? (
-                    <img src={settings.org_logo_url} alt="Org Logo" className="h-full w-full object-contain" />
+                    <Image src={settings.org_logo_url} alt="Org Logo" width={80} height={80} className="h-full w-full object-contain" />
                   ) : (
                     <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
                   )}

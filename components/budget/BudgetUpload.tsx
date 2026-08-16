@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logAudit } from '@/lib/audit';
@@ -66,8 +66,8 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
   const [pasteText, setPasteText] = useState('');
   const [showPaste, setShowPaste] = useState(false);
 
-  const accountByCode = new Map(accounts.filter((a) => !a.is_group).map((a) => [a.code, a]));
-  const leafAccounts = accounts.filter((a) => !a.is_group);
+  const accountByCode = useMemo(() => new Map(accounts.filter((a) => !a.is_group).map((a) => [a.code, a])), [accounts]);
+  const leafAccounts = useMemo(() => accounts.filter((a) => !a.is_group), [accounts]);
 
   const normalize = (s: string): string =>
     s.toLowerCase().trim()
@@ -92,7 +92,7 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
     return dp[m][n];
   };
 
-  const matchAccount = (rawText: string): ChartAccount | undefined => {
+  const matchAccount = useCallback((rawText: string): ChartAccount | undefined => {
     const text = rawText.trim();
     if (!text) return undefined;
     // 1. Exact code match
@@ -136,7 +136,7 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
       }
     }
     return bestFuzzy;
-  };
+  }, [accountByCode, leafAccounts]);
 
   const reset = () => {
     setParsedRows([]);
@@ -183,7 +183,7 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
     setIssues(newIssues);
     setMatched(m);
     setUnmatched(u);
-  }, [accounts]);
+  }, [accountByCode, matchAccount]);
 
   const handleFile = async (file: File) => {
     try {

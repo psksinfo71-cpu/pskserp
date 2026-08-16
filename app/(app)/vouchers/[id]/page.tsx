@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import Image from 'next/image';
 import type { Voucher, Profile } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { formatCurrency, formatDate, numberToWords } from '@/lib/format';
@@ -178,7 +179,7 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
               {/* Signature on top */}
               <div className="flex h-14 items-end justify-center">
                 {s.profile?.signature_url ? (
-                  <img src={s.profile.signature_url} alt="Signature" className="max-h-14 max-w-full object-contain" />
+                  <Image src={s.profile.signature_url} alt="Signature" width={224} height={56} className="max-h-14 max-w-full object-contain" />
                 ) : (
                   <div className="border-b border-gray-400 w-full" />
                 )}
@@ -186,7 +187,7 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
               {/* Seal below */}
               <div className="relative flex h-16 items-center justify-center">
                 {s.profile?.seal_url ? (
-                  <img src={s.profile.seal_url} alt="Seal" className="max-h-16 max-w-full object-contain opacity-90" />
+                  <Image src={s.profile.seal_url} alt="Seal" width={128} height={64} className="max-h-16 max-w-full object-contain opacity-90" />
                 ) : null}
               </div>
               <p className="mt-1 text-xs font-semibold">{s.label}</p>

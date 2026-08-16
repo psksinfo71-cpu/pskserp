@@ -331,7 +331,28 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
       }
 
       const amount = grandDebit;
-      const status: VoucherStatus = submit ? 'submitted' : 'draft';
+      // Read the current database status instead of relying only on the row
+      // captured when the edit dialog was opened. This prevents a posted
+      // voucher from being accidentally changed to submitted after a stale
+      // client row or a resubmit action.
+      let persistedStatus: VoucherStatus | null = null;
+      if (editing) {
+        const { data: currentVoucher, error: currentVoucherError } = await supabase
+          .from('vouchers')
+          .select('status, posted_at, approved_by')
+          .eq('id', editing.id)
+          .maybeSingle();
+        if (currentVoucherError) throw currentVoucherError;
+        persistedStatus = (currentVoucher?.status as VoucherStatus | null) ?? null;
+        // A previous buggy resubmit could have changed status to submitted
+        // while leaving the original posting evidence intact. Treat that row
+        // as a posted correction so the next save restores posted status.
+        if (currentVoucher?.posted_at || currentVoucher?.approved_by) {
+          persistedStatus = 'posted';
+        }
+      }
+      const postedEdit = persistedStatus === 'posted' || editing?.status === 'posted';
+      const status: VoucherStatus = postedEdit ? 'posted' : (submit ? 'submitted' : 'draft');
       const branchId = profile?.branch_id ?? null;
 
       let workflowId: string | null = null;
@@ -396,7 +417,7 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
           setSaving(false);
           return;
         }
-        if (editing.status === 'posted' && profile?.role !== 'super_admin') {
+        if (postedEdit && profile?.role !== 'super_admin') {
           toast.error('Only Super Admin can edit posted vouchers');
           setSaving(false);
           return;
@@ -404,19 +425,27 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
         const { error } = await supabase.from('vouchers').update({
           voucher_type: voucherType, voucher_date: voucherDate,
           project_id: projectId || null,
-          narration, amount, status, updated_at: new Date().toISOString(),
+          narration, amount, status,
+          ...(postedEdit ? { posted_at: new Date().toISOString() } : {}),
+          updated_at: new Date().toISOString(),
         }).eq('id', editing.id);
         if (error) throw error;
-        await supabase.from('voucher_details').delete().eq('voucher_id', editing.id);
-        await supabase.from('voucher_details').insert(
+        const { error: deleteDetailsError } = await supabase
+          .from('voucher_details')
+          .delete()
+          .eq('voucher_id', editing.id);
+        if (deleteDetailsError) throw deleteDetailsError;
+        const { error: insertDetailsError } = await supabase.from('voucher_details').insert(
           allLines.map((l, i) => ({
             voucher_id: editing.id, account_id: l.account_id,
             debit: l.debit, credit: l.credit,
-            narration: l.narration, line_order: i + 1,
+            narration: l.narration,
+            line_order: i + 1,
           }))
         );
+        if (insertDetailsError) throw insertDetailsError;
         await logAudit({ action: 'update', table_name: 'vouchers', record_id: editing.id, new_values: { status, amount }, user_id: profile?.id, user_email: profile?.email });
-        toast.success(submit ? 'Voucher submitted for approval' : 'Draft saved');
+        toast.success(postedEdit ? 'Posted voucher updated' : (submit ? 'Voucher submitted for approval' : 'Draft saved'));
       } else {
         const voucherNo = await nextVoucherNo();
         const { data, error } = await supabase.from('vouchers').insert({
