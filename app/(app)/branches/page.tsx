@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { toast } from 'sonner';
-import { Loader2, Plus, Pencil, Building2, ChevronRight } from 'lucide-react';
+import { Loader2, Plus, Pencil, Building2, ChevronRight, Trash2 } from 'lucide-react';
 
 const OFFICE_TYPE_LABELS: Record<OfficeType, string> = {
   head_office: 'Head Office',
@@ -46,6 +46,7 @@ export default function BranchesPage() {
   const [editing, setEditing] = useState<Partial<Branch> | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -112,9 +113,14 @@ export default function BranchesPage() {
             <Badge variant="secondary" className="text-[10px]">{node.project_name}</Badge>
           )}
           {can(role, 'manage_master_data') && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(node); setDialogOpen(true); }}>
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
+            <>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(node); setDialogOpen(true); }}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeOffice(node)} disabled={deleting} title="Delete office">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </>
           )}
         </div>
         {children.map((c) => renderNode(c, depth + 1))}
@@ -125,6 +131,23 @@ export default function BranchesPage() {
   const openCreate = () => {
     setEditing({ id: '', code: '', name: '', office_type: 'project_office', parent_id: null, project_id: null, division: '', region: '', district: '', address: '', phone: '', email: '', is_active: true, level: 0 });
     setDialogOpen(true);
+  };
+
+  const removeOffice = async (office: Branch) => {
+    if (!can(role, 'manage_master_data')) { toast.error('Only admin can delete offices'); return; }
+    if (!window.confirm(`Delete office "${office.name}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      const { count: childCount } = await supabase.from('branches').select('id', { count: 'exact', head: true }).eq('parent_id', office.id);
+      if ((childCount ?? 0) > 0) throw new Error('Move or delete child offices before deleting this office');
+      const { count: voucherCount } = await supabase.from('vouchers').select('id', { count: 'exact', head: true }).eq('branch_id', office.id);
+      if ((voucherCount ?? 0) > 0) throw new Error('This office has vouchers and cannot be deleted');
+      const { error } = await supabase.from('branches').delete().eq('id', office.id);
+      if (error) throw error;
+      toast.success('Office deleted');
+      await load();
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setDeleting(false); }
   };
 
   const save = async () => {
