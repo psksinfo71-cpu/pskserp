@@ -59,7 +59,11 @@ export async function fetchBalanceSheetData(
   const { data: accountsRaw } = await accQ;
   const accounts = filterProjectAccounts((accountsRaw ?? []) as ChartAccount[], projectId);
 
-  const movements = await fetchMovementsForProject(asOnDate, projectId, fromDate);
+  const movements = await fetchMovementsForProject(asOnDate, projectId);
+  const asOn = new Date(`${asOnDate}T00:00:00`);
+  const comparativeYear = asOn.getMonth() + 1 <= 6 ? asOn.getFullYear() - 1 : asOn.getFullYear();
+  const comparativeDate = `${comparativeYear}-06-30`;
+  const comparativeMovements = await fetchMovementsForProject(comparativeDate, projectId);
 
   const cloneOrigins = new Map<string, string>();
   for (const a of accounts) {
@@ -74,6 +78,13 @@ export async function fetchBalanceSheetData(
       cloneMov.debit += origMov.debit;
       cloneMov.credit += origMov.credit;
       movements.set(cloneId, cloneMov);
+      const comparativeOrigMov = comparativeMovements.get(origId);
+      if (comparativeOrigMov) {
+        const comparativeCloneMov = comparativeMovements.get(cloneId) ?? { debit: 0, credit: 0 };
+        comparativeCloneMov.debit += comparativeOrigMov.debit;
+        comparativeCloneMov.credit += comparativeOrigMov.credit;
+        comparativeMovements.set(cloneId, comparativeCloneMov);
+      }
     }
   }
 
@@ -81,14 +92,14 @@ export async function fetchBalanceSheetData(
 
   const leafAccounts = accounts.filter((a) => !a.is_group);
 
-  const balanceOf = (acc: ChartAccount): number => {
-    const m = movements.get(acc.id) ?? { debit: 0, credit: 0 };
+  const balanceFrom = (acc: ChartAccount, movementMap: MovementMap): number => {
+    const m = movementMap.get(acc.id) ?? { debit: 0, credit: 0 };
     const opening = resolveOpening(acc.id, acc.opening_balance || 0, projectOB);
-    if (acc.account_type === 'asset') {
-      return opening + m.debit - m.credit;
-    }
+    if (acc.account_type === 'asset') return opening + m.debit - m.credit;
     return opening + m.credit - m.debit;
   };
+  const balanceOf = (acc: ChartAccount) => balanceFrom(acc, movements);
+  const comparativeBalanceOf = (acc: ChartAccount) => balanceFrom(acc, comparativeMovements);
 
   const assetLeaves = leafAccounts.filter((a) => a.account_type === 'asset');
   const liabilityLeaves = leafAccounts.filter((a) => a.account_type === 'liability');
@@ -106,9 +117,16 @@ export async function fetchBalanceSheetData(
     .select('debit, credit, account: chart_of_accounts!inner(account_type), voucher: vouchers!inner(status, project_id, voucher_date)')
     .eq('voucher.status', 'posted')
     .lte('voucher.voucher_date', asOnDate);
-  if (fromDate) incExpQ = incExpQ.gte('voucher.voucher_date', fromDate);
   if (projectId) incExpQ = incExpQ.eq('voucher.project_id', projectId);
   const { data: incExpData } = await incExpQ;
+
+  let comparativeIncExpQ = supabase
+    .from('voucher_details')
+    .select('debit, credit, account: chart_of_accounts!inner(account_type), voucher: vouchers!inner(status, project_id, voucher_date)')
+    .eq('voucher.status', 'posted')
+    .lte('voucher.voucher_date', comparativeDate);
+  if (projectId) comparativeIncExpQ = comparativeIncExpQ.eq('voucher.project_id', projectId);
+  const { data: comparativeIncExpData } = await comparativeIncExpQ;
 
   let incomeOB = 0;
   let expenseOB = 0;
@@ -126,12 +144,20 @@ export async function fetchBalanceSheetData(
 
   let incMov = 0;
   let expMov = 0;
+  let comparativeIncMov = 0;
+  let comparativeExpMov = 0;
   for (const d of incExpData ?? []) {
     const acc = d.account as unknown as { account_type: string };
     if (acc?.account_type === 'income') incMov += (Number(d.credit) || 0) - (Number(d.debit) || 0);
     if (acc?.account_type === 'expense') expMov += (Number(d.debit) || 0) - (Number(d.credit) || 0);
   }
+  for (const d of comparativeIncExpData ?? []) {
+    const acc = d.account as unknown as { account_type: string };
+    if (acc?.account_type === 'income') comparativeIncMov += (Number(d.credit) || 0) - (Number(d.debit) || 0);
+    if (acc?.account_type === 'expense') comparativeExpMov += (Number(d.debit) || 0) - (Number(d.credit) || 0);
+  }
   const surplus = (incomeOB + incMov) - (expenseOB + expMov);
+  const comparativeSurplus = (incomeOB + comparativeIncMov) - (expenseOB + comparativeExpMov);
   const fundAccount = equityLeaves.find((a) => a.code === '3001') ?? equityLeaves[0];
 
   const rows: ReportRow[] = [];
@@ -152,6 +178,7 @@ export async function fetchBalanceSheetData(
   // --- ASSET SECTIONS ---
   for (const sec of ASSET_SECTIONS) {
     let sectionTotal = 0;
+    let comparativeSectionTotal = 0;
 
     if (sec.section === 'PROPERTY AND ASSETS') {
       // Always show WDV as a single row, not per group code
@@ -162,12 +189,13 @@ export async function fetchBalanceSheetData(
           particulars: 'Fixed Assets (at WDV)',
           this_month: 0,
           this_year: liveWdv,
-          previous_year: 0,
+           previous_year: assetLeaves.filter((a) => a.code.startsWith('11') || a.code.startsWith('12') || a.code.startsWith('110')).reduce((s, a) => s + comparativeBalanceOf(a), 0),
           is_subtotal: false,
           sort_order: sortOrder,
         });
         sortOrder += 10;
         sectionTotal += liveWdv;
+        comparativeSectionTotal += assetLeaves.filter((a) => a.code.startsWith('11') || a.code.startsWith('12') || a.code.startsWith('110')).reduce((s, a) => s + comparativeBalanceOf(a), 0);
       }
     } else {
       for (const gCode of sec.groupCodes) {
@@ -175,7 +203,8 @@ export async function fetchBalanceSheetData(
         for (const leaf of leaves) {
           if (addedIds.has(leaf.id)) continue;
           const bal = balanceOf(leaf);
-          if (bal === 0) continue;
+          const comparativeBal = comparativeBalanceOf(leaf);
+          if (bal === 0 && comparativeBal === 0) continue;
           addedIds.add(leaf.id);
           rows.push({
             id: leaf.id,
@@ -183,25 +212,26 @@ export async function fetchBalanceSheetData(
             particulars: leaf.name,
             this_month: 0,
             this_year: bal,
-            previous_year: 0,
-            is_subtotal: false,
+             previous_year: comparativeBal,
+             is_subtotal: false,
             sort_order: sortOrder,
           });
           sortOrder += 10;
           sectionTotal += bal;
+          comparativeSectionTotal += comparativeBal;
         }
       }
 
     }
 
-    if (sectionTotal !== 0) {
+    if (sectionTotal !== 0 || comparativeSectionTotal !== 0) {
       rows.push({
         id: `sub-${sec.section}`,
         section: sec.section,
         particulars: `Total ${sec.section}`,
         this_month: 0,
         this_year: sectionTotal,
-        previous_year: 0,
+        previous_year: comparativeSectionTotal,
         is_subtotal: true,
         sort_order: sortOrder,
       });
@@ -212,6 +242,7 @@ export async function fetchBalanceSheetData(
   // --- LIABILITY & EQUITY SECTIONS ---
   for (const sec of LIABILITY_SECTIONS) {
     let sectionTotal = 0;
+    let comparativeSectionTotal = 0;
     for (const gCode of sec.groupCodes) {
       const leaves = leavesUnderGroupCode(gCode);
       if (leaves.length === 0) continue;
@@ -219,11 +250,12 @@ export async function fetchBalanceSheetData(
       for (const leaf of leaves) {
         if (addedIds.has(leaf.id)) continue;
         const bal = balanceOf(leaf);
-        const fundAdjustment = sec.section === 'FUND AND LIABILITIES' && leaf.id === fundAccount?.id
-          ? surplus
-          : 0;
+        const comparativeBal = comparativeBalanceOf(leaf);
+        const fundAdjustment = sec.section === 'FUND AND LIABILITIES' && leaf.id === fundAccount?.id ? surplus : 0;
+        const comparativeFundAdjustment = sec.section === 'FUND AND LIABILITIES' && leaf.id === fundAccount?.id ? comparativeSurplus : 0;
         const displayedBalance = bal + fundAdjustment;
-        if (displayedBalance === 0) continue;
+        const displayedComparativeBalance = comparativeBal + comparativeFundAdjustment;
+        if (displayedBalance === 0 && displayedComparativeBalance === 0) continue;
         addedIds.add(leaf.id);
         rows.push({
           id: leaf.id,
@@ -231,12 +263,13 @@ export async function fetchBalanceSheetData(
           particulars: leaf.name,
           this_month: 0,
           this_year: displayedBalance,
-          previous_year: 0,
+          previous_year: displayedComparativeBalance,
           is_subtotal: false,
           sort_order: sortOrder,
         });
         sortOrder += 10;
         sectionTotal += displayedBalance;
+        comparativeSectionTotal += displayedComparativeBalance;
       }
     }
 
@@ -247,22 +280,23 @@ export async function fetchBalanceSheetData(
         particulars: 'General Fund (Balancing Figure)',
         this_month: 0,
         this_year: surplus,
-        previous_year: 0,
+        previous_year: comparativeSurplus,
         is_subtotal: false,
         sort_order: sortOrder,
       });
       sortOrder += 10;
       sectionTotal += surplus;
+      comparativeSectionTotal += comparativeSurplus;
     }
 
-    if (sectionTotal !== 0) {
+    if (sectionTotal !== 0 || comparativeSectionTotal !== 0) {
       rows.push({
         id: `sub-${sec.section}`,
         section: sec.section,
         particulars: `Total ${sec.section}`,
         this_month: 0,
         this_year: sectionTotal,
-        previous_year: 0,
+        previous_year: comparativeSectionTotal,
         is_subtotal: true,
         sort_order: sortOrder,
       });
