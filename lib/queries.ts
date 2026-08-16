@@ -13,6 +13,54 @@ export interface LedgerRow {
   balance: number;
 }
 
+export interface GeneralLedgerRow extends LedgerRow {
+  account_code: string;
+  account_name: string;
+}
+
+/** Fetch every posted voucher line for the project, including ledger code/name. */
+export async function getGeneralLedger(
+  opts: { from?: string; to?: string; projectId?: string } = {}
+): Promise<GeneralLedgerRow[]> {
+  let q = supabase
+    .from('voucher_details')
+    .select(`
+      debit, credit, narration, line_order,
+      account: chart_of_accounts!inner ( code, name ),
+      voucher: vouchers!inner ( voucher_no, voucher_date, voucher_type, status, project_id, narration, created_at )
+    `)
+    .eq('voucher.status', 'posted')
+    .order('line_order');
+  if (opts.projectId) q = q.eq('voucher.project_id', opts.projectId);
+  if (opts.from) q = q.gte('voucher.voucher_date', opts.from);
+  if (opts.to) q = q.lte('voucher.voucher_date', opts.to);
+  const { data, error } = await q;
+  if (error) throw error;
+
+  const raw = (data ?? []).map((d) => {
+    const v = d.voucher as unknown as { voucher_no: string; voucher_date: string; voucher_type: string; narration: string; created_at: string };
+    const a = d.account as unknown as { code: string; name: string };
+    return {
+      account_code: a.code,
+      account_name: a.name,
+      voucher_no: v.voucher_no,
+      voucher_date: v.voucher_date,
+      voucher_type: v.voucher_type,
+      narration: d.narration || v.narration,
+      debit: Number(d.debit) || 0,
+      credit: Number(d.credit) || 0,
+      created_at: v.created_at,
+      line_order: Number(d.line_order) || 0,
+    };
+  });
+  raw.sort((a, b) => a.voucher_date.localeCompare(b.voucher_date) || a.voucher_no.localeCompare(b.voucher_no) || a.line_order - b.line_order || a.created_at.localeCompare(b.created_at));
+  let balance = 0;
+  return raw.map(({ created_at: _createdAt, line_order: _lineOrder, ...row }) => {
+    balance += row.debit - row.credit;
+    return { ...row, balance };
+  });
+}
+
 /** Fetch posted voucher details joined with the account for a given account.
  *  When a project clone account is queried, movements posted against the original
  *  global account are automatically merged in so the ledger is complete. */
