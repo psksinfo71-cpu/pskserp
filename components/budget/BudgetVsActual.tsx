@@ -24,6 +24,22 @@ function variancePctStr(pct: number | null): string {
 export function BudgetVsActual({ rows, totalBudget, totalActual, fyName, projectName, versionLabel, printDate }: Props) {
   const totalVariance = totalBudget - totalActual;
   const totalVariancePct = totalBudget === 0 ? null : (totalVariance / totalBudget) * 100;
+  const incomeRows = rows.filter((row) => row.account_type === 'income');
+  const expenseRows = rows.filter((row) => row.account_type !== 'income');
+  const incomeBudget = incomeRows.reduce((sum, row) => sum + row.amount, 0);
+  const expenseBudget = expenseRows.reduce((sum, row) => sum + row.amount, 0);
+  const incomeActual = incomeRows.reduce((sum, row) => sum + row.actual, 0);
+  const expenseActual = expenseRows.reduce((sum, row) => sum + row.actual, 0);
+  const renderRows = (sectionRows: BudgetWithActual[]) => sectionRows.map((r, i) => (
+    <tr key={`${r.account_id ?? r.account_code}-${i}`} className="hover:bg-muted/10">
+      <td className="px-3 py-1.5">{r.account_name ?? '—'}</td>
+      <td className="px-2 py-1.5 font-mono text-xs text-muted-foreground">{r.account_code ?? ''}</td>
+      <td className="px-3 py-1.5 text-right font-mono tabular-nums">{formatCurrency(r.amount)}</td>
+      <td className="px-3 py-1.5 text-right font-mono tabular-nums">{formatCurrency(r.actual)}</td>
+      <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium ${r.variance >= 0 ? 'text-success' : 'text-destructive'}`}>{formatCurrency(r.variance)}</td>
+      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-xs">{variancePctStr(r.variance_pct)}</td>
+    </tr>
+ ));
 
   const headers = ['Particulars', 'Code', 'Budget', 'Actual', 'Variance', 'Variance %'];
   const exportRows = rows.map((r) => [
@@ -98,20 +114,16 @@ export function BudgetVsActual({ rows, totalBudget, totalActual, fyName, project
               {rows.length === 0 ? (
                 <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No budget data found for the selected filters</td></tr>
               ) : (
-                rows.map((r, i) => (
-                  <tr key={i} className="hover:bg-muted/10">
-                    <td className="px-3 py-1.5">{r.account_name ?? '—'}</td>
-                    <td className="px-2 py-1.5 font-mono text-xs text-muted-foreground">{r.account_code ?? ''}</td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums">{formatCurrency(r.amount)}</td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums">{formatCurrency(r.actual)}</td>
-                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium ${r.variance >= 0 ? 'text-success' : 'text-destructive'}`}>
-                      {formatCurrency(r.variance)}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-xs">
-                      {variancePctStr(r.variance_pct)}
-                    </td>
-                  </tr>
-                ))
+                <>
+                  <tr className="bg-muted/50"><td colSpan={6} className="px-3 py-2 font-bold uppercase">Income</td></tr>
+                  {renderRows(incomeRows)}
+                  <tr className="border-t-2 border-border font-bold"><td colSpan={2} className="px-3 py-2">Total Income</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(incomeBudget)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(incomeActual)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(incomeBudget - incomeActual)}</td><td /></tr>
+                  <tr className="bg-muted/50"><td colSpan={6} className="px-3 py-2 font-bold uppercase">Expenditure</td></tr>
+                  {renderRows(expenseRows)}
+                  <tr className="border-t-2 border-border font-bold"><td colSpan={2} className="px-3 py-2">Total Expenditure</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(expenseBudget)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(expenseActual)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(expenseBudget - expenseActual)}</td><td /></tr>
+                  <tr className="bg-muted/50"><td colSpan={6} className="px-3 py-2 font-bold uppercase">Surplus/(Deficit) of Income over Expenditure</td></tr>
+                  <tr className="font-bold"><td colSpan={2} className="px-3 py-2">Surplus/(Deficit)</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(incomeBudget - expenseBudget)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(incomeActual - expenseActual)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency((incomeBudget - expenseBudget) - (incomeActual - expenseActual))}</td><td /></tr>
+                </>
               )}
             </tbody>
             <tfoot className="border-t-2 border-foreground bg-primary/10">

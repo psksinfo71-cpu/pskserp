@@ -42,8 +42,15 @@ export interface BudgetWithActual extends BudgetRow {
   variance_pct: number | null;
 }
 
+export interface BudgetVarianceSummary {
+  income: { previous: number; target: number; actual: number; variance: number };
+  expenditure: { previous: number; target: number; actual: number; variance: number };
+  surplus: { previous: number; target: number; actual: number; variance: number };
+}
+
 export interface BudgetTreeNode {
   account: ChartAccount;
+  previous: number;
   budget: number;
   actual: number;
   variance: number;
@@ -165,6 +172,25 @@ export function computeVariance(budget: number, actual: number): { variance: num
   return { variance, variance_pct };
 }
 
+export async function fetchBudgetVarianceSummary(filters: Partial<BudgetFilters>): Promise<BudgetVarianceSummary> {
+  const budgets = await fetchBudgets(filters);
+  const accountIds = budgets.map((b) => b.account_id).filter(Boolean) as string[];
+  const actualMap = await fetchActualMovements(accountIds, filters);
+  const totals = { income: { previous: 0, target: 0, actual: 0 }, expenditure: { previous: 0, target: 0, actual: 0 } };
+  for (const row of budgets) {
+    const key = row.account_type === 'income' ? 'income' : 'expenditure';
+    totals[key].previous += row.prev_year_actual;
+    totals[key].target += row.amount;
+    if (row.account_id) totals[key].actual += actualMap.get(row.account_id) ?? 0;
+  }
+  const income = { ...totals.income, variance: totals.income.target - totals.income.actual };
+  const expenditure = { ...totals.expenditure, variance: totals.expenditure.target - totals.expenditure.actual };
+  const previousSurplus = income.previous - expenditure.previous;
+  const targetSurplus = income.target - expenditure.target;
+  const actualSurplus = income.actual - expenditure.actual;
+  return { income, expenditure, surplus: { previous: previousSurplus, target: targetSurplus, actual: actualSurplus, variance: targetSurplus - actualSurplus } };
+}
+
 export async function fetchBudgetVsActual(filters: Partial<BudgetFilters>): Promise<{ rows: BudgetWithActual[]; totalBudget: number; totalActual: number }> {
   const budgets = await fetchBudgets(filters);
   const accountIds = budgets.map((b) => b.account_id).filter(Boolean) as string[];
@@ -193,8 +219,12 @@ export async function fetchBudgetTree(
 
   const budgets = await fetchBudgets(filters);
   const budgetByAccount = new Map<string, number>();
+  const previousByAccount = new Map<string, number>();
   for (const b of budgets) {
-    if (b.account_id) budgetByAccount.set(b.account_id, (budgetByAccount.get(b.account_id) ?? 0) + b.amount);
+    if (b.account_id) {
+      budgetByAccount.set(b.account_id, (budgetByAccount.get(b.account_id) ?? 0) + b.amount);
+      previousByAccount.set(b.account_id, (previousByAccount.get(b.account_id) ?? 0) + b.prev_year_actual);
+    }
   }
 
   const accountIds = budgets.map((b) => b.account_id).filter(Boolean) as string[];
@@ -213,12 +243,14 @@ export async function fetchBudgetTree(
       .sort((a, b) => a.code.localeCompare(b.code))
       .map((account) => {
         const children = buildTree(account.id, type);
+        const previous = previousByAccount.get(account.id) ?? 0;
         const budget = budgetByAccount.get(account.id) ?? 0;
         const actual = actualMap.get(account.id) ?? 0;
         const { variance, variance_pct } = computeVariance(budget, actual);
-        if (!account.is_group && budget === 0 && actual === 0 && children.length === 0) return null;
+        if (!account.is_group && previous === 0 && budget === 0 && actual === 0 && children.length === 0) return null;
         return {
           account,
+          previous,
           budget,
           actual,
           variance,

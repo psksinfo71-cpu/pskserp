@@ -17,7 +17,8 @@ import {
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatCurrency } from '@/lib/format';
-import { Upload, ClipboardPaste, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Table } from 'lucide-react';
+import { AccountCombobox } from '@/components/vouchers/AccountCombobox';
+import { Upload, ClipboardPaste, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Table, Download, Printer, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import type { FinancialYear, Project, ChartAccount } from '@/lib/types';
@@ -33,6 +34,19 @@ interface ValidationIssue {
   row: number;
   message: string;
   code?: string;
+}
+
+interface UnmappedRow extends ParsedRow {
+  rowNumber: number;
+  sourceHead: string;
+  mappedAccountId?: string;
+}
+
+interface ImportColumnMapping {
+  headerIndex: number;
+  nameColumn: number;
+  previousColumn: number;
+  budgetColumn: number;
 }
 
 interface Props {
@@ -62,19 +76,31 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [matched, setMatched] = useState(0);
   const [unmatched, setUnmatched] = useState(0);
+  const [unmappedRows, setUnmappedRows] = useState<UnmappedRow[]>([]);
+  const [showMapping, setShowMapping] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [showPaste, setShowPaste] = useState(false);
+  const [fileName, setFileName] = useState('');
+  const [rawImportRows, setRawImportRows] = useState<unknown[][]>([]);
+  const [importColumns, setImportColumns] = useState<string[]>([]);
+  const [columnMapping, setColumnMapping] = useState<ImportColumnMapping | null>(null);
+  const [showColumnMapping, setShowColumnMapping] = useState(false);
 
   const accountByCode = useMemo(() => new Map(accounts.filter((a) => !a.is_group).map((a) => [a.code, a])), [accounts]);
   const leafAccounts = useMemo(() => accounts.filter((a) => !a.is_group), [accounts]);
-
   const normalize = (s: string): string =>
     s.toLowerCase().trim()
       .replace(/[/&\-_,.()]/g, ' ')
       .replace(/\s+/g, ' ')
       .replace(/(s)\b/g, '') // simple de-pluralize
       .trim();
+
+  const inactiveImportHeads = useMemo(() => {
+    const names = ['local donation', 'members subscription fees', 'training center', 'relief rehabilitation', 'advertisement and newspaper bill', 'bank charge on fdr', 'depreciation', 'education training workshop', 'fuel and lubricants', 'interest on staff security money', 'others expenses'];
+    return leafAccounts.filter((account) => !account.is_active && names.includes(normalize(account.name)));
+  }, [leafAccounts]);
 
   const levenshtein = (a: string, b: string): number => {
     const m = a.length, n = b.length;
@@ -143,8 +169,16 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
     setIssues([]);
     setMatched(0);
     setUnmatched(0);
+    setUnmappedRows([]);
+    setShowMapping(false);
+    setShowPreview(false);
     setPasteText('');
     setShowPaste(false);
+    setFileName('');
+    setRawImportRows([]);
+    setImportColumns([]);
+    setColumnMapping(null);
+    setShowColumnMapping(false);
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -152,24 +186,25 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
     const valid: ParsedRow[] = [];
     const newIssues: ValidationIssue[] = [];
     let m = 0, u = 0;
+    const unresolved: UnmappedRow[] = [];
     const seenCodes = new Set<string>();
 
     rows.forEach((r, i) => {
       if (!r.code) {
-        newIssues.push({ row: i + 1, message: 'Missing ledger code' });
+        newIssues.push({ row: i + 1, message: 'Missing Budget Head' });
         u++;
+        unresolved.push({ ...r, rowNumber: i + 1, sourceHead: r.name || r.code });
         return;
       }
-      if (seenCodes.has(r.code)) {
-        newIssues.push({ row: i + 1, message: `Duplicate code: ${r.code}`, code: r.code });
-        u++;
-        return;
-      }
+      // The prescribed report can contain the same head in both Income and
+      // Expenditure sections. Keep both rows so import matches the source.
+      // The database budget rows are line-based and variance totals aggregate them.
       seenCodes.add(r.code);
       const acc = accountByCode.get(r.code) ?? matchAccount(r.code);
       if (!acc) {
-        newIssues.push({ row: i + 1, message: `Account "${r.code}" not found in COA`, code: r.code });
+        newIssues.push({ row: i + 1, message: `Budget Head "${r.code}" not found in COA`, code: r.code });
         u++;
+        unresolved.push({ ...r, rowNumber: i + 1, sourceHead: r.name || r.code });
         return;
       }
       if (r.amount < 0) {
@@ -179,10 +214,28 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
       valid.push(r);
     });
 
-    setParsedRows(valid);
+    // A prescribed statement may repeat a head in separate sections. The
+    // budgets table stores one line per account/version, so consolidate those
+    // rows while preserving both source columns before saving.
+    const consolidated = Array.from(valid.reduce((map, row) => {
+      const existing = map.get(row.code);
+      if (existing) {
+        existing.amount += row.amount;
+        existing.prevYearActual += row.prevYearActual;
+      } else {
+        map.set(row.code, { ...row });
+      }
+      return map;
+    }, new Map<string, ParsedRow>()).values());
+    setParsedRows(consolidated);
     setIssues(newIssues);
-    setMatched(m);
+    setMatched(consolidated.length);
     setUnmatched(u);
+    setUnmappedRows(unresolved);
+    // Always show the parsed preview first. Unmapped rows are reviewed only
+    // when the user explicitly clicks "Review & Map".
+    setShowMapping(false);
+    setShowPreview(valid.length > 0 || unresolved.length > 0);
   }, [accountByCode, matchAccount]);
 
   const handleFile = async (file: File) => {
@@ -191,38 +244,60 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
       const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false });
-      const rows = parseRawRows(raw);
-      validateAndSet(rows);
+      const headerIndex = raw.findIndex((row) => row.some((cell) => normalize(String(cell ?? '')).includes('particular')));
+      const header = headerIndex >= 0 ? raw[headerIndex].map((cell) => String(cell ?? '').trim()) : (raw[0] ?? []).map((cell) => String(cell ?? '').trim());
+      const normalizedHeader = header.map(normalize);
+      const autoName = Math.max(0, normalizedHeader.findIndex((cell) => cell.includes('particular') || cell.includes('name')));
+      const autoPrevious = Math.max(0, normalizedHeader.findIndex((cell) => cell.includes('previous') || cell.includes('actual')));
+      const autoBudget = Math.max(0, normalizedHeader.findIndex((cell) => cell.includes('budget') || cell.includes('target')));
+      setFileName(file.name);
+      setRawImportRows(raw);
+      setImportColumns(header);
+      setColumnMapping({ headerIndex: headerIndex >= 0 ? headerIndex : 0, nameColumn: autoName, previousColumn: autoPrevious, budgetColumn: autoBudget });
+      setShowColumnMapping(true);
     } catch {
       toast.error('Failed to read Excel file');
     }
   };
 
-  const parseRawRows = (raw: unknown[][]): ParsedRow[] => {
+  const confirmColumnMapping = () => {
+    if (!columnMapping || !rawImportRows.length) return;
+    const mappedRaw = rawImportRows.map((row, index) => {
+      if (index <= columnMapping.headerIndex) return index === columnMapping.headerIndex ? ['PARTICULARS', 'PREVIOUS ACTUAL', 'BUDGET'] : [];
+      return [row[columnMapping.nameColumn], row[columnMapping.previousColumn], row[columnMapping.budgetColumn]];
+    });
+    validateAndSet(parseRawRows(mappedRaw, { headerIndex: columnMapping.headerIndex, previousCol: 1, budgetCol: 2 }));
+    setShowColumnMapping(false);
+  };
+
+  const parseRawRows = (raw: unknown[][], columns: { headerIndex?: number; previousCol?: number; budgetCol?: number } = {}): ParsedRow[] => {
     const rows: ParsedRow[] = [];
-    const skipKeywords = ['particular', 'ledger', 'code', 'account', 'total', 'grand', 'surplus', 'deficit', 'taka', 'palashipara', 'samaj', 'kallayan', 'samity', 'gangni', 'meherpur', 'general fund', 'income', 'expenditure', 'expense', 'property', 'asset', 'liabilit', 'fund and', 'current', 'investment', 'for the', 'balance sheet', 'budget', 'version', 'fiscal year', 'md.', 'deputy', 'director', 'executive', 'date', 'print'];
+    const skipKeywords = ['particular', 'ledger', 'code', 'account', 'total', 'grand', 'surplus', 'deficit', 'taka', 'palashipara', 'samaj', 'kallayan', 'samity', 'gangni', 'meherpur', 'general fund', 'property', 'asset', 'liabilit', 'fund and', 'current', 'investment', 'for the', 'balance sheet', 'budget', 'version', 'fiscal year', 'md.', 'deputy', 'director', 'executive', 'date', 'print'];
     for (let i = 0; i < raw.length; i++) {
       const r = raw[i];
       if (!r || r.length === 0) continue;
+      if (columns.headerIndex !== undefined && i <= columns.headerIndex) continue;
       const col0 = String(r[0] ?? '').trim();
       if (!col0) continue;
       const lower0 = col0.toLowerCase();
-      // Skip header/section/total rows
-      if (skipKeywords.some((kw) => lower0.includes(kw))) continue;
+      // Skip report metadata and structural rows, but do not reject legitimate
+      // account names such as "Agriculture/Income Generation" or "Others Expenses".
+      const structuralRow = /^(income|expenditure|expense|total|grand total|surplus|deficit|total taka|total expenditure|total income)\s*[:.-]?$/i.test(col0);
+      if (structuralRow || skipKeywords.some((kw) => lower0.includes(kw))) continue;
       // Skip rows where col0 is purely a date or number (not a name/code)
       if (/^[\d\/\-]+$/.test(col0)) continue;
 
-      // Find the amount: try columns 1, 2, 3, 4... first one that parses to a number
-      let amount = 0;
-      let amountCol = -1;
-      for (let c = 1; c < (r.length || 0); c++) {
-        const val = String(r[c] ?? '').replace(/[,\s]/g, '');
-        if (val && !isNaN(parseFloat(val))) {
-          amount = parseFloat(val) || 0;
-          amountCol = c;
-          break;
-        }
-      }
+      const readNumber = (value: unknown): number | null => {
+        const text = String(value ?? '').replace(/[,\s]/g, '');
+        if (!text || isNaN(parseFloat(text))) return null;
+        return parseFloat(text) || 0;
+      };
+      // Prescribed format is: Particulars | Previous FS Year Actual | Current Budget.
+      // Use the detected headers so previous actual is never mistaken for budget.
+      let amount = columns.budgetCol !== undefined && columns.budgetCol >= 0
+        ? (readNumber(r[columns.budgetCol]) ?? 0)
+        : (readNumber(r[1]) ?? 0);
+      let amountCol = columns.budgetCol !== undefined && columns.budgetCol >= 0 ? columns.budgetCol : 1;
       // Skip rows with no numeric amount in any column
       const hasAnyNumber = r.slice(1).some((v) => {
         const val = String(v ?? '').replace(/[,\s]/g, '');
@@ -230,12 +305,8 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
       });
       if (amount === 0 && !hasAnyNumber) continue;
 
-      // Previous year actual: try the column after amount
-      let prevYearActual = 0;
-      if (amountCol >= 0 && amountCol + 1 < r.length) {
-        const pva = String(r[amountCol + 1] ?? '').replace(/[,\s]/g, '');
-        if (pva && !isNaN(parseFloat(pva))) prevYearActual = parseFloat(pva) || 0;
-      }
+      const previousCol = columns.previousCol !== undefined && columns.previousCol >= 0 ? columns.previousCol : amountCol + 1;
+      const prevYearActual = readNumber(r[previousCol]) ?? 0;
 
       // Match to COA: try as code first, then as name
       const acc = matchAccount(col0);
@@ -246,11 +317,61 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
     return rows;
   };
 
+  const downloadTemplate = () => {
+    const income = leafAccounts.filter((account) => account.account_type === 'income');
+    const expenditure = leafAccounts.filter((account) => account.account_type !== 'income');
+    const rows: (string | number)[][] = [
+      ['PARTICULARS', `Previous FS Year Actual Income & Expenditure`, `${fys.find((f) => f.id === fyId)?.name ?? 'Current'} Budget`],
+      ['INCOME:', '', ''],
+      ...income.map((account) => [account.name, '', '']),
+      ['Total Income Taka:', '', ''],
+      ['EXPENDITURE:', '', ''],
+      ...expenditure.map((account) => [account.name, '', '']),
+      ['Total Expenditure:', '', ''],
+      ['Surplus/(Deficit) of Income over Expenditure', '', ''],
+      ['Total Taka:', '', ''],
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    worksheet['!cols'] = [{ wch: 52 }, { wch: 34 }, { wch: 22 }];
+    worksheet['!merges'] = [
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
+      { s: { r: income.length + 2, c: 0 }, e: { r: income.length + 2, c: 2 } },
+      { s: { r: income.length + expenditure.length + 3, c: 0 }, e: { r: income.length + expenditure.length + 3, c: 2 } },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Budget Format');
+    XLSX.writeFile(workbook, 'prescribed-project-budget-template.xlsx');
+  };
+
+  const updateMapping = (rowNumber: number, accountId: string) => {
+    setUnmappedRows((rows) => rows.map((row) => row.rowNumber === rowNumber ? { ...row, mappedAccountId: accountId } : row));
+  };
+
+  const mappedRows = useMemo<ParsedRow[]>(() => unmappedRows.flatMap((row) => {
+    const account = leafAccounts.find((item) => item.id === row.mappedAccountId);
+    return account ? [{ code: account.code, name: account.name, amount: row.amount, prevYearActual: row.prevYearActual }] : [];
+  }), [leafAccounts, unmappedRows]);
+
+  const printPreview = () => {
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) return;
+    const rows = [...parsedRows, ...mappedRows];
+    const income = rows.filter((row) => (accountByCode.get(row.code)?.account_type ?? '') === 'income');
+    const expenditure = rows.filter((row) => (accountByCode.get(row.code)?.account_type ?? '') !== 'income');
+    const tableRows = (items: ParsedRow[]) => items.map((row) => `<tr><td>${row.name}</td><td>${row.amount ? row.amount.toLocaleString() : ''}</td><td></td><td></td><td></td><td></td></tr>`).join('');
+    printWindow.document.write(`<html><head><title>Project Budget Preview</title><style>body{font-family:Arial,sans-serif;margin:20px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #555;padding:5px}th{text-align:center;font-size:14px}td:not(:first-child){text-align:right}.section{text-align:center!important;font-weight:bold;background:#eee}.total{text-align:right!important;font-weight:bold}</style></head><body><table><thead><tr><th>PARTICULARS</th><th>Target ${fys.find((f) => f.id === fyId)?.name ?? ''}</th><th>This Month</th><th>This Year</th><th>%</th><th>Balance</th></tr></thead><tbody><tr><td class="section" colspan="6">INCOME:</td></tr>${tableRows(income)}<tr><td class="total" colspan="6">Total Income Taka:</td></tr><tr><td class="section" colspan="6">EXPENDITURE:</td></tr>${tableRows(expenditure)}<tr><td class="total" colspan="6">Total Expenditure:</td></tr><tr><td class="total" colspan="6">Surplus/(Deficit) of Income over Expenditure</td></tr><tr><td class="total" colspan="6">Total Taka:</td></tr></tbody></table></body></html>`);
+    printWindow.document.close(); printWindow.focus(); printWindow.print();
+  };
+
   const handlePaste = () => {
     if (!pasteText.trim()) return;
     const lines = pasteText.trim().split(/\n/);
     const raw: unknown[][] = lines.map((l) => l.split(/\t|,/).map((c) => c.trim()));
-    const rows = parseRawRows(raw);
+    const headerIndex = raw.findIndex((row) => row.some((cell) => normalize(String(cell ?? '')).includes('particular')));
+    const header = headerIndex >= 0 ? raw[headerIndex].map((cell) => normalize(String(cell ?? ''))) : [];
+    const previousCol = header.findIndex((cell) => cell.includes('previous') || cell.includes('actual'));
+    const budgetCol = header.findIndex((cell) => cell.includes('budget') || cell.includes('target'));
+    const rows = parseRawRows(raw, { headerIndex, previousCol: previousCol >= 0 ? previousCol : 1, budgetCol: budgetCol >= 0 ? budgetCol : 2 });
     validateAndSet(rows);
     setShowPaste(false);
   };
@@ -258,33 +379,51 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
   const save = async () => {
     if (!fyId) { toast.error('Select a Fiscal Year'); return; }
     if (!projectId) { toast.error('Select a Fund/Project'); return; }
-    if (parsedRows.length === 0) { toast.error('No valid budget rows to save'); return; }
+    if (unmappedRows.length > 0 && mappedRows.length !== unmappedRows.length) { toast.error('Map all unmatched Budget Heads before saving'); setShowMapping(true); return; }
+    if (!showPreview) { setShowPreview(true); return; }
+    if (parsedRows.length === 0 && mappedRows.length === 0) { toast.error('No valid budget rows to save'); return; }
     setSaving(true);
     try {
       const versionLabel = VERSION_OPTIONS.find((v) => v.value === versionType)?.label ?? 'Original';
-      const { data: versionData, error: vError } = await supabase
+      // A version is unique per financial year + project + label. Reuse the
+      // existing version instead of inserting a duplicate on every import.
+      const { data: existingVersion, error: findVersionError } = await supabase
         .from('budget_versions')
-        .insert({
-          fiscal_year_id: fyId,
-          project_id: projectId,
-          version_label: versionLabel,
-          version_type: versionType,
-          created_by: profile?.id ?? null,
-        })
-        .select()
-        .single();
-      if (vError) throw vError;
-      const versionId = versionData.id;
+        .select('id')
+        .eq('fiscal_year_id', fyId)
+        .eq('project_id', projectId)
+        .eq('version_label', versionLabel)
+        .maybeSingle();
+      if (findVersionError) throw findVersionError;
+
+      let versionId = existingVersion?.id as string | undefined;
+      if (!versionId) {
+        const { data: versionData, error: vError } = await supabase
+          .from('budget_versions')
+          .insert({
+            fiscal_year_id: fyId,
+            project_id: projectId,
+            version_label: versionLabel,
+            version_type: versionType,
+            created_by: profile?.id ?? null,
+          })
+          .select('id')
+          .single();
+        if (vError) throw vError;
+        versionId = versionData.id;
+      }
 
       if (mode === 'replace') {
-        await supabase.from('budgets')
+        const { error: deleteError } = await supabase.from('budgets')
           .delete()
           .eq('financial_year_id', fyId)
           .eq('project_id', projectId)
           .eq('budget_version_id', versionId);
+        if (deleteError) throw deleteError;
       }
 
-      const inserts = parsedRows.map((r) => {
+      const rowsToSave = [...parsedRows, ...mappedRows];
+      const inserts = rowsToSave.map((r) => {
         const acc = accountByCode.get(r.code) ?? matchAccount(r.code)!;
         return {
           budget_version_id: versionId,
@@ -300,6 +439,11 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
         };
       });
 
+      const importAccountIds = Array.from(new Set(inserts.map((row) => row.account_id)));
+      if (importAccountIds.length > 0) {
+        const { error: activateError } = await supabase.from('chart_of_accounts').update({ is_active: true }).in('id', importAccountIds).eq('is_active', false);
+        if (activateError) throw activateError;
+      }
       const { error: insertError } = await supabase.from('budgets').insert(inserts);
       if (insertError) throw insertError;
 
@@ -395,11 +539,16 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
           <Button variant="outline" onClick={() => setShowPaste(!showPaste)}>
             <ClipboardPaste className="mr-2 h-4 w-4" /> Paste from Excel
           </Button>
+          {fileName && <span className="self-center text-xs text-muted-foreground">{fileName}</span>}
+          {inactiveImportHeads.length > 0 && <span className="self-center text-xs text-amber-700">Inactive matching heads will be activated on upload</span>}
+          <Button variant="outline" onClick={downloadTemplate}>
+            <Download className="mr-2 h-4 w-4" /> Download Prescribed Excel Template
+          </Button>
         </div>
 
         {showPaste && (
           <div className="space-y-2">
-            <Label>Paste Excel data here (tab-separated: Code, Name, Amount, PrevYearActual)</Label>
+            <Label>Paste the prescribed Excel table here (Particulars, Previous Actual, Budget)</Label>
             <Textarea
               rows={6}
               value={pasteText}
@@ -408,6 +557,16 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
             />
             <Button size="sm" onClick={handlePaste}><Table className="mr-2 h-4 w-4" /> Parse Pasted Data</Button>
           </div>
+        )}
+
+        {unmappedRows.length > 0 && (
+          <Alert variant="destructive" className="border-amber-400 bg-amber-50 text-amber-950">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+              <span><strong>{unmappedRows.length} Budget Head(s)</strong> need manual mapping before upload.</span>
+              <Button size="sm" variant="outline" onClick={() => setShowMapping(true)}>Review & Map</Button>
+            </AlertDescription>
+          </Alert>
         )}
 
         {parsedRows.length > 0 && (
@@ -470,11 +629,36 @@ export function BudgetUpload({ open, onOpenChange, fys, projects, accounts, onSa
 
         <DialogFooter>
           <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }}>Cancel</Button>
-          <Button onClick={save} disabled={saving || parsedRows.length === 0}>
-            {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : <><Upload className="mr-2 h-4 w-4" /> Save Budget</>}
+          {showPreview && <Button variant="outline" onClick={printPreview}><Printer className="mr-2 h-4 w-4" /> Print Preview</Button>}
+          <Button onClick={save} disabled={saving || (parsedRows.length === 0 && mappedRows.length === 0) || (unmappedRows.length > 0 && mappedRows.length !== unmappedRows.length)}>
+            {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : <><Upload className="mr-2 h-4 w-4" /> {showPreview ? 'Confirm & Upload Budget' : 'Preview Budget'}</>}
           </Button>
         </DialogFooter>
       </DialogContent>
+      <Dialog open={showColumnMapping} onOpenChange={setShowColumnMapping}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Import Excel File — Select Column Mapping</DialogTitle><DialogDescription>Confirm which Excel columns contain the Budget Head, Previous Actual and Budget Target. Preview will be generated after mapping.</DialogDescription></DialogHeader>
+          <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">{rawImportRows.length} rows found. The selected columns will be used exactly for import; no amount column will be guessed.</div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {([['nameColumn', 'Budget Head / Particulars'], ['previousColumn', 'Previous FS Year Actual'], ['budgetColumn', 'Budget Target']] as const).map(([key, label]) => <div key={key} className="space-y-1.5"><Label>{label}</Label><Select value={String(columnMapping?.[key] ?? 0)} onValueChange={(value) => setColumnMapping((current) => current ? { ...current, [key]: Number(value) } : current)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{importColumns.map((column, index) => <SelectItem key={index} value={String(index)}>Col {index + 1}: {column || `Column ${index + 1}`}</SelectItem>)}</SelectContent></Select></div>)}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => { setShowColumnMapping(false); setFileName(''); }}>Cancel</Button><Button onClick={confirmColumnMapping}><CheckCircle2 className="mr-2 h-4 w-4" /> Preview Imported Data</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showMapping} onOpenChange={setShowMapping}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Map Unmatched Budget Heads</DialogTitle><DialogDescription>Review every Excel Budget Head that could not be matched automatically.</DialogDescription></DialogHeader>
+          <div className="max-h-[55vh] space-y-3 overflow-y-auto">
+            {unmappedRows.map((row) => (
+              <div key={row.rowNumber} className="grid gap-2 rounded-md border-amber-200 bg-amber-50 p-3 sm:grid-cols-[1fr_1fr] sm:items-center">
+                <div><p className="text-xs text-muted-foreground">Excel row {row.rowNumber}</p><p className="font-medium">{row.sourceHead}</p><p className="font-mono text-xs">{formatCurrency(row.amount)}</p></div>
+                <AccountCombobox accounts={leafAccounts} value={row.mappedAccountId ?? ''} onChange={(value) => updateMapping(row.rowNumber, value)} placeholder="Search code or account head..." />
+              </div>
+            ))}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setShowMapping(false)}>Continue Editing</Button><Button onClick={() => { if (mappedRows.length !== unmappedRows.length) { toast.error('Map every unmatched Budget Head first'); return; } setShowMapping(false); setUnmappedRows([]); setUnmatched(0); setShowPreview(true); }}>Confirm Mappings & Preview</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

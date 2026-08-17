@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { formatCurrency, formatDateTime } from '@/lib/format';
 import { exportToExcel, printReport } from '@/lib/export';
-import type { BudgetTreeNode } from '@/lib/budget-data';
+import type { BudgetTreeNode, BudgetVarianceSummary } from '@/lib/budget-data';
 import { flattenBudgetTree, aggregateTree } from '@/lib/budget-data';
 import { Button } from '@/components/ui/button';
 import { ChevronRight, ChevronDown, FileSpreadsheet, Printer } from 'lucide-react';
@@ -17,6 +17,15 @@ interface Props {
   projectName: string;
   versionLabel: string;
   printDate: string;
+  varianceSummary?: BudgetVarianceSummary;
+}
+
+function VarianceSection({ title, rows, previousTotal, targetTotal, actualTotal }: { title: string; rows: BudgetTreeNode[]; previousTotal: number; targetTotal: number; actualTotal: number }) {
+  const expanded = new Set<string>();
+  const collect = (nodes: BudgetTreeNode[]) => nodes.forEach((node) => { if (node.children.length > 0) { expanded.add(node.account.id); collect(node.children); } });
+  collect(rows);
+  const lines = flattenBudgetTree(rows, 0, expanded, title === 'Income').filter(({ node }) => !node.isGroup);
+  return <div className="overflow-x-auto rounded-lg border-2 border-foreground"><table className="w-full text-sm"><thead className="bg-muted/30"><tr><th className="px-3 py-2 text-left">Particulars</th><th className="px-3 py-2 text-right">Previous FS Year Actual</th><th className="px-3 py-2 text-right">Budget 2026-27</th><th className="px-3 py-2 text-right">Actual</th><th className="px-3 py-2 text-right">Variance</th></tr></thead><tbody className="divide-y divide-border">{lines.map(({ node }) => { const target = node.budget; const actual = node.actual; return <tr key={node.account.id}><td className="px-3 py-1.5">{node.account.name}</td><td className="px-3 py-1.5 text-right font-mono">{formatCurrency(node.previous)}</td><td className="px-3 py-1.5 text-right font-mono">{formatCurrency(target)}</td><td className="px-3 py-1.5 text-right font-mono">{formatCurrency(actual)}</td><td className="px-3 py-1.5 text-right font-mono">{formatCurrency(target - actual)}</td></tr>; })}<tr className="border-t-2 border-foreground font-bold"><td className="px-3 py-2">{title === 'Income' ? 'Total Income Taka:' : 'Total Expenditure:'}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(previousTotal)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(targetTotal)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(actualTotal)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(targetTotal - actualTotal)}</td></tr></tbody></table></div>;
 }
 
 function variancePctStr(pct: number | null): string {
@@ -112,7 +121,7 @@ function TreeSection({ nodes, title, expanded, toggle }: {
   );
 }
 
-export function BudgetVariance({ incomeTree, expenseTree, grandBudget, grandActual, fyName, projectName, versionLabel, printDate }: Props) {
+export function BudgetVariance({ incomeTree, expenseTree, grandBudget, grandActual, fyName, projectName, versionLabel, printDate, varianceSummary }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const grandVariance = grandBudget - grandActual;
   const grandVariancePct = grandBudget === 0 ? null : (grandVariance / grandBudget) * 100;
@@ -224,8 +233,15 @@ export function BudgetVariance({ incomeTree, expenseTree, grandBudget, grandActu
         </div>
       </div>
 
-      <TreeSection nodes={incomeTree} title="Income" expanded={expanded} toggle={toggle} />
-      <TreeSection nodes={expenseTree} title="Expense" expanded={expanded} toggle={toggle} />
+      {varianceSummary ? (
+        <>
+          <VarianceSection title="Income" rows={incomeTree} previousTotal={varianceSummary.income.previous} targetTotal={varianceSummary.income.target} actualTotal={varianceSummary.income.actual} />
+          <VarianceSection title="Expenditure" rows={expenseTree} previousTotal={varianceSummary.expenditure.previous} targetTotal={varianceSummary.expenditure.target} actualTotal={varianceSummary.expenditure.actual} />
+          <div className="overflow-x-auto rounded-lg border-2 border-foreground"><table className="w-full text-sm"><tbody><tr className="font-bold"><td className="px-3 py-2">Surplus/(Deficit) of Income over Expenditure</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(varianceSummary.surplus.previous)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(varianceSummary.surplus.target)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(varianceSummary.surplus.actual)}</td><td className="px-3 py-2 text-right font-mono">{formatCurrency(varianceSummary.surplus.variance)}</td></tr></tbody></table></div>
+        </>
+      ) : (
+        <><TreeSection nodes={incomeTree} title="Income" expanded={expanded} toggle={toggle} /><TreeSection nodes={expenseTree} title="Expense" expanded={expanded} toggle={toggle} /></>
+      )}
 
       <div className={`flex items-center justify-between rounded-lg border-2 px-4 py-3 ${grandVariance >= 0 ? 'border-success bg-success/5' : 'border-destructive bg-destructive/5'}`}>
         <span className="text-sm font-bold">GRAND TOTAL (Income + Expense)</span>

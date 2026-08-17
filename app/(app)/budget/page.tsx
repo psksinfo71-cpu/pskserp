@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { can } from '@/lib/permissions';
@@ -20,22 +21,26 @@ import {
 } from '@/components/ui/dialog';
 import { BudgetUpload } from '@/components/budget/BudgetUpload';
 import { BudgetVsActual } from '@/components/budget/BudgetVsActual';
+import { BudgetStatement } from '@/components/budget/BudgetStatement';
 import { BudgetVariance } from '@/components/budget/BudgetVariance';
 import {
-  fetchBudgetVersions, fetchBudgetVsActual, fetchBudgetTree,
-  type BudgetVersion, type BudgetWithActual, type BudgetTreeNode, type BudgetFilters,
+  fetchBudgetVersions, fetchBudgetVsActual, fetchBudgetTree, fetchBudgetVarianceSummary,
+  type BudgetVersion, type BudgetWithActual, type BudgetTreeNode, type BudgetFilters, type BudgetVarianceSummary,
 } from '@/lib/budget-data';
 import { formatCurrency, formatDateTime, toInputDate } from '@/lib/format';
-import { PiggyBank, Plus, Upload, Loader2, Trash2, FileBarChart, GitCompare } from 'lucide-react';
+import { PiggyBank, Plus, Upload, Loader2, Trash2, FileBarChart, GitCompare, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Budget, Branch, Project, FinancialYear, ChartAccount } from '@/lib/types';
+
+const emptyBudgetForm = { accountId: '', previous: '', amount: '', accountType: 'income' as 'income' | 'expense' };
 
 export default function BudgetPage() {
   const { profile, activeProject, userProjects } = useAuth();
   const role = profile?.role ?? 'accountant';
   const canManage = can(role, 'manage_budget');
+  const searchParams = useSearchParams();
 
-  const [tab, setTab] = useState<'upload' | 'vs_actual' | 'variance'>('vs_actual');
+  const [tab, setTab] = useState<'upload' | 'budget' | 'vs_actual' | 'variance'>('budget');
   const [fys, setFys] = useState<FinancialYear[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -45,19 +50,27 @@ export default function BudgetPage() {
 
   const [filters, setFilters] = useState<Partial<BudgetFilters>>({});
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [budgetDialog, setBudgetDialog] = useState<{ mode: 'add' | 'edit'; row?: BudgetWithActual } | null>(null);
+  const [budgetForm, setBudgetForm] = useState(emptyBudgetForm);
 
   const [vsActualRows, setVsActualRows] = useState<BudgetWithActual[]>([]);
   const [vsActualTotals, setVsActualTotals] = useState({ totalBudget: 0, totalActual: 0 });
   const [incomeTree, setIncomeTree] = useState<BudgetTreeNode[]>([]);
   const [expenseTree, setExpenseTree] = useState<BudgetTreeNode[]>([]);
   const [grandTotals, setGrandTotals] = useState({ grandBudget: 0, grandActual: 0 });
+  const [varianceSummary, setVarianceSummary] = useState<BudgetVarianceSummary | null>(null);
+
+  useEffect(() => {
+    const requestedTab = searchParams.get('tab');
+    setTab(requestedTab === 'variance' ? 'variance' : requestedTab === 'vs_actual' ? 'vs_actual' : 'budget');
+  }, [searchParams]);
   const [loading, setLoading] = useState(false);
 
   const loadMeta = useCallback(async () => {
     const [fyRes, brRes, accRes, verRes] = await Promise.all([
       supabase.from('financial_years').select('*').order('start_date', { ascending: false }),
       supabase.from('branches').select('*').eq('is_active', true).order('name'),
-      supabase.from('chart_of_accounts').select('*').eq('is_active', true).order('code'),
+      supabase.from('chart_of_accounts').select('*').order('code'),
       fetchBudgetVersions(),
     ]);
     setFys((fyRes.data as FinancialYear[]) ?? []);
@@ -104,7 +117,13 @@ export default function BudgetPage() {
         const { rows, totalBudget, totalActual } = await fetchBudgetVsActual(filters);
         setVsActualRows(rows);
         setVsActualTotals({ totalBudget, totalActual });
+      } else if (tab === 'budget') {
+        const { rows, totalBudget, totalActual } = await fetchBudgetVsActual(filters);
+        setVsActualRows(rows);
+        setVsActualTotals({ totalBudget, totalActual });
       } else if (tab === 'variance') {
+        const summary = await fetchBudgetVarianceSummary(filters);
+        setVarianceSummary(summary);
         const { incomeTree: it, expenseTree: et, grandBudget, grandActual } = await fetchBudgetTree(filters);
         setIncomeTree(it);
         setExpenseTree(et);
@@ -127,6 +146,21 @@ export default function BudgetPage() {
   const fyName = selectedFy?.name ?? '';
   const projectName = selectedProject?.name ?? '';
   const printDate = new Date().toISOString();
+
+  const openBudgetForm = (mode: 'add' | 'edit', row?: BudgetWithActual, accountType: 'income' | 'expense' = 'income') => {
+    setBudgetForm({ accountId: row?.account_id ?? '', previous: row ? String(row.prev_year_actual) : '', amount: row ? String(row.amount) : '', accountType: row?.account_type === 'income' ? 'income' : accountType });
+    setBudgetDialog({ mode, row });
+  };
+
+  const saveBudgetRow = async () => {
+    if (!filters.fiscalYearId || !filters.projectId || !budgetForm.accountId) { toast.error('Select project, financial year and account head'); return; }
+    const payload = { financial_year_id: filters.fiscalYearId, project_id: filters.projectId, account_id: budgetForm.accountId, amount: Number(budgetForm.amount) || 0, prev_year_actual: Number(budgetForm.previous) || 0, period: 'annual', status: 'draft' };
+    const query = budgetDialog?.mode === 'edit' && budgetDialog.row ? supabase.from('budgets').update(payload).eq('id', budgetDialog.row.id) : supabase.from('budgets').insert(payload);
+    const { error } = await query;
+    if (error) { toast.error(error.message); return; }
+    toast.success(budgetDialog?.mode === 'edit' ? 'Budget row updated' : 'Budget row added');
+    setBudgetDialog(null); setBudgetForm(emptyBudgetForm); await loadExistingBudgets(); await loadReports();
+  };
 
   const deleteBudget = async (b: Budget) => {
     if (!confirm('Delete this budget row?')) return;
@@ -222,27 +256,24 @@ export default function BudgetPage() {
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList>
+          <TabsTrigger value="budget"><FileSpreadsheet className="mr-1.5 h-4 w-4" /> Budget</TabsTrigger>
           <TabsTrigger value="vs_actual"><GitCompare className="mr-1.5 h-4 w-4" /> Budget vs Actual</TabsTrigger>
           <TabsTrigger value="variance"><FileBarChart className="mr-1.5 h-4 w-4" /> Variance Report</TabsTrigger>
           {canManage && <TabsTrigger value="upload"><Upload className="mr-1.5 h-4 w-4" /> Manage</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="vs_actual" className="mt-4">
+        <TabsContent value="budget" className="mt-4">
           {loading ? (
             <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
           ) : vsActualRows.length === 0 ? (
             <Card><EmptyState icon={PiggyBank} title="No budget data" description="Upload a budget to see Budget vs Actual comparison." /></Card>
           ) : (
-            <BudgetVsActual
-              rows={vsActualRows}
-              totalBudget={vsActualTotals.totalBudget}
-              totalActual={vsActualTotals.totalActual}
-              fyName={fyName}
-              projectName={projectName}
-              versionLabel={versionLabel}
-              printDate={printDate}
-            />
+            <BudgetStatement rows={vsActualRows} fyName={fyName} projectName={projectName} printDate={printDate} canManage={canManage} onAdd={(type) => openBudgetForm('add', undefined, type)} onEdit={(row) => openBudgetForm('edit', row)} onDelete={(row) => row.id && deleteBudget({ id: row.id } as Budget)} />
           )}
+        </TabsContent>
+
+        <TabsContent value="vs_actual" className="mt-4">
+          {loading ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div> : <BudgetVsActual rows={vsActualRows} totalBudget={vsActualTotals.totalBudget} totalActual={vsActualTotals.totalActual} fyName={fyName} projectName={projectName} versionLabel={versionLabel} printDate={printDate} />}
         </TabsContent>
 
         <TabsContent value="variance" className="mt-4">
@@ -260,6 +291,7 @@ export default function BudgetPage() {
               projectName={projectName}
               versionLabel={versionLabel}
               printDate={printDate}
+              varianceSummary={varianceSummary ?? undefined}
             />
           )}
         </TabsContent>
@@ -317,7 +349,8 @@ export default function BudgetPage() {
         )}
       </Tabs>
 
-      {canManage && (
+      {budgetDialog && <Dialog open onOpenChange={(open) => { if (!open) setBudgetDialog(null); }}><DialogContent><DialogHeader><DialogTitle>{budgetDialog.mode === 'edit' ? 'Edit Budget Row' : 'Add Budget Row'}</DialogTitle><DialogDescription>Changes automatically flow to Budget vs Actual and Variance Report.</DialogDescription></DialogHeader><div className="space-y-4"><div><Label>Account Head</Label><Select value={budgetForm.accountId || 'none'} onValueChange={(value) => setBudgetForm({ ...budgetForm, accountId: value === 'none' ? '' : value })}><SelectTrigger><SelectValue placeholder="Select account head" /></SelectTrigger><SelectContent>{accounts.filter((account) => !account.is_group && account.account_type === budgetForm.accountType).map((account) => <SelectItem key={account.id} value={account.id}>{account.code} - {account.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Previous Actual</Label><input type="number" value={budgetForm.previous} onChange={(event) => setBudgetForm({ ...budgetForm, previous: event.target.value })} className="flex h-9 w-full rounded-md border-input bg-background px-3 text-sm" /></div><div><Label>Budget 2026-27</Label><input type="number" value={budgetForm.amount} onChange={(event) => setBudgetForm({ ...budgetForm, amount: event.target.value })} className="flex h-9 w-full rounded-md border-input bg-background px-3 text-sm" /></div></div><DialogFooter><Button variant="outline" onClick={() => setBudgetDialog(null)}>Cancel</Button><Button onClick={saveBudgetRow}>Save Budget Row</Button></DialogFooter></DialogContent></Dialog>}
+            {canManage && (
         <BudgetUpload
           open={uploadOpen}
           onOpenChange={setUploadOpen}
