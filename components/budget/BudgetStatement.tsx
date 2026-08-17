@@ -27,8 +27,20 @@ export function BudgetStatement({
   onEdit,
   onDelete,
 }: Props) {
-  const income = rows.filter((row) => row.account_type === "income");
-  const expenditure = rows.filter((row) => row.account_type !== "income");
+  const sortByCode = (a: BudgetWithActual, b: BudgetWithActual) =>
+    (a.account_code ?? "").localeCompare(b.account_code ?? "", undefined, {
+      numeric: true,
+      sensitivity: "base",
+    }) ||
+    (a.account_name ?? "").localeCompare(b.account_name ?? "", undefined, {
+      sensitivity: "base",
+    });
+  const income = rows
+    .filter((row) => row.account_type === "income")
+    .sort(sortByCode);
+  const expenditure = rows
+    .filter((row) => row.account_type !== "income")
+    .sort(sortByCode);
   const total = (
     items: BudgetWithActual[],
     field: "amount" | "actual" | "prev_year_actual",

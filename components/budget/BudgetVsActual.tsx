@@ -24,8 +24,9 @@ function variancePctStr(pct: number | null): string {
 export function BudgetVsActual({ rows, totalBudget, totalActual, fyName, projectName, versionLabel, printDate }: Props) {
   const totalVariance = totalBudget - totalActual;
   const totalVariancePct = totalBudget === 0 ? null : (totalVariance / totalBudget) * 100;
-  const incomeRows = rows.filter((row) => row.account_type === 'income');
-  const expenseRows = rows.filter((row) => row.account_type !== 'income');
+  const sortByCode = (a: BudgetWithActual, b: BudgetWithActual) => (a.account_code ?? '').localeCompare(b.account_code ?? '', undefined, { numeric: true, sensitivity: 'base' }) || (a.account_name ?? '').localeCompare(b.account_name ?? '', undefined, { sensitivity: 'base' });
+  const incomeRows = rows.filter((row) => row.account_type === 'income').sort(sortByCode);
+  const expenseRows = rows.filter((row) => row.account_type !== 'income').sort(sortByCode);
   const incomeBudget = incomeRows.reduce((sum, row) => sum + row.amount, 0);
   const expenseBudget = expenseRows.reduce((sum, row) => sum + row.amount, 0);
   const incomeActual = incomeRows.reduce((sum, row) => sum + row.actual, 0);
