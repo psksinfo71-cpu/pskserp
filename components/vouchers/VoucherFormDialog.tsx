@@ -221,7 +221,7 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, editing, voucherType, projectId, branchOfficeType, profile]);
+  }, [open, editing, voucherType, projectId, voucherDate, branchOfficeType, profile]);
 
   // Fetch account balance when control account changes
   useEffect(() => {
@@ -286,6 +286,7 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
       p_project_id: projectId || null,
       p_branch_id: profile?.branch_id ?? null,
       p_office_type: branchOfficeType,
+      p_voucher_date: voucherDate,
     });
     if (error) throw new Error(`Failed to generate voucher number: ${error.message}`);
     return data as string;
@@ -457,13 +458,26 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
         await logAudit({ action: 'update', table_name: 'vouchers', record_id: editing.id, new_values: { status, amount }, user_id: profile?.id, user_email: profile?.email });
         toast.success(postedEdit ? 'Posted voucher updated' : (submit ? 'Voucher submitted for approval' : 'Draft saved'));
       } else {
-        const voucherNo = await nextVoucherNo();
-        const { data, error } = await supabase.from('vouchers').insert({
+        let voucherNo = await nextVoucherNo();
+        let { data, error } = await supabase.from('vouchers').insert({
           voucher_no: voucherNo, voucher_type: voucherType, voucher_date: voucherDate,
           branch_id: branchId, project_id: projectId || null,
           narration, amount, status, prepared_by: profile?.id,
           approval_workflow_id: workflowId, current_step: 0,
         }).select().single();
+        // A legacy sequence can still point at an existing voucher number.
+        // Retry once with a fresh atomic number if the unique constraint rejects it.
+        if (error?.code === '23505' && error.message.includes('vouchers_voucher_no_key')) {
+          voucherNo = await nextVoucherNo();
+          const retry = await supabase.from('vouchers').insert({
+            voucher_no: voucherNo, voucher_type: voucherType, voucher_date: voucherDate,
+            branch_id: branchId, project_id: projectId || null,
+            narration, amount, status, prepared_by: profile?.id,
+            approval_workflow_id: workflowId, current_step: 0,
+          }).select().single();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) throw error;
         await supabase.from('voucher_details').insert(
           allLines.map((l, i) => ({
