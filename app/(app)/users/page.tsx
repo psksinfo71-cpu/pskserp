@@ -43,6 +43,7 @@ export default function UsersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Profile | null>(null);
   const [form, setForm] = useState({ email: '', password: '', full_name: '', role: 'accountant' as Role, branch_id: '', department_id: '', project_id: '', phone: '', designation: '' });
+  const [assignedRoles, setAssignedRoles] = useState<Role[]>(['accountant']);
   const [assignedProjectIds, setAssignedProjectIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [sigTarget, setSigTarget] = useState<Profile | null>(null);
@@ -61,7 +62,23 @@ export default function UsersPage() {
       supabase.from('projects').select('id, name').order('name'),
       supabase.from('departments').select('*').order('name'),
     ]);
-    if (uRes.data) setUsers(uRes.data as Profile[]);
+    if (uRes.error) toast.error(`Could not load users: ${uRes.error.message}`);
+    const profiles = (uRes.data ?? []) as Profile[];
+    const userIds = profiles.map((u) => u.id);
+    let rolesByUser = new Map<string, Role[]>();
+    if (userIds.length > 0) {
+      const { data: roleRows, error: rolesError } = await supabase
+        .from('user_roles').select('user_id, role').in('user_id', userIds);
+      if (rolesError) {
+        console.warn('Multi-role table is unavailable; using primary profile roles.', rolesError.message);
+      } else {
+        rolesByUser = new Map<string, Role[]>();
+        for (const row of (roleRows ?? []) as { user_id: string; role: Role }[]) {
+          rolesByUser.set(row.user_id, [...(rolesByUser.get(row.user_id) ?? []), row.role]);
+        }
+      }
+    }
+    setUsers(profiles.map((u) => ({ ...u, roles: rolesByUser.get(u.id)?.length ? rolesByUser.get(u.id) : [u.role] })));
     setBranches(bRes.data as Branch[] ?? []);
     setProjectList(pRes.data ?? []);
     setDepartments(dRes.data as Department[] ?? []);
@@ -80,11 +97,16 @@ export default function UsersPage() {
     setEditTarget(null);
     setForm({ email: '', password: '', full_name: '', role: 'accountant', branch_id: '', department_id: '', project_id: '', phone: '', designation: '' });
     setAssignedProjectIds([]);
+    setAssignedRoles(['accountant']);
     setDialogOpen(true);
   };
   const openEdit = async (u: Profile) => {
     setEditTarget(u);
     setForm({ email: u.email, password: '', full_name: u.full_name, role: u.role, branch_id: u.branch_id ?? '', department_id: u.department_id ?? '', project_id: u.project_id ?? '', phone: u.phone ?? '', designation: u.designation ?? '' });
+    const { data: urs, error: rolesError } = await supabase.from('user_roles').select('role').eq('user_id', u.id);
+    const roles = (urs ?? []).map((r: { role: string }) => r.role as Role).filter((r): r is Role => ROLES.includes(r));
+    if (rolesError && !isMissingRolesTable(rolesError.message)) console.warn('Could not load assigned roles:', rolesError.message);
+    setAssignedRoles(roles.length > 0 ? roles : [u.role]);
     const { data: ups } = await supabase.from('user_projects').select('project_id').eq('user_id', u.id);
     setAssignedProjectIds((ups ?? []).map((r: { project_id: string }) => r.project_id));
     setDialogOpen(true);
@@ -121,7 +143,7 @@ export default function UsersPage() {
         }
 
         const { error } = await supabase.from('profiles').update({
-          full_name: form.full_name, role: form.role,
+          full_name: form.full_name, role: assignedRoles[0] ?? form.role,
           branch_id: form.branch_id || null, department_id: form.department_id || null,
           project_id: assignedProjectIds[0] || null,
           phone: form.phone, designation: form.designation || null, is_active: editTarget.is_active,
@@ -129,8 +151,9 @@ export default function UsersPage() {
         }).eq('id', editTarget.id);
         if (error) throw error;
 
+        await syncUserRoles(editTarget.id, assignedRoles);
         await syncUserProjects(editTarget.id, assignedProjectIds);
-        await logAudit({ action: 'update', table_name: 'profiles', record_id: editTarget.id, new_values: { role: form.role, full_name: form.full_name, email: form.email } });
+        await logAudit({ action: 'update', table_name: 'profiles', record_id: editTarget.id, new_values: { roles: assignedRoles, full_name: form.full_name, email: form.email } });
         toast.success('User updated');
       } else {
         if (!form.email || !form.password || !form.full_name) { toast.error('Email, password and name are required'); setSaving(false); return; }
@@ -144,19 +167,31 @@ export default function UsersPage() {
             Authorization: `Bearer ${session.session?.access_token}`,
             apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
           },
-          body: JSON.stringify(form),
+          body: JSON.stringify({ ...form, role: assignedRoles[0] ?? form.role, roles: assignedRoles }),
         });
         const result = await res.json();
         if (!res.ok) throw new Error(result.error || 'Failed to create user');
 
+        await syncUserRoles(result.id, assignedRoles);
         await syncUserProjects(result.id, assignedProjectIds);
 
-        await logAudit({ action: 'create_user', table_name: 'profiles', record_id: result.id, new_values: { email: form.email, role: form.role } });
+        await logAudit({ action: 'create_user', table_name: 'profiles', record_id: result.id, new_values: { email: form.email, roles: assignedRoles } });
         toast.success('User created');
       }
       setDialogOpen(false);
       load();
     } catch (e) { toast.error((e as Error).message); } finally { setSaving(false); }
+  };
+
+  const isMissingRolesTable = (message: string) => message.includes('user_roles') || message.includes('schema cache');
+
+  const syncUserRoles = async (userId: string, roles: Role[]) => {
+    const { error: deleteError } = await supabase.from('user_roles').delete().eq('user_id', userId);
+    if (deleteError && !isMissingRolesTable(deleteError.message)) throw deleteError;
+    if (roles.length > 0 && !deleteError) {
+      const { error } = await supabase.from('user_roles').insert(roles.map((role) => ({ user_id: userId, role })));
+      if (error && !isMissingRolesTable(error.message)) throw error;
+    }
   };
 
   const syncUserProjects = async (userId: string, projectIds: string[]) => {
@@ -294,7 +329,7 @@ export default function UsersPage() {
                         <div className="min-w-0"><p className="truncate text-sm font-medium">{u.full_name}</p><p className="truncate text-xs text-muted-foreground">{u.email}</p></div>
                       </div>
                     </td>
-                    <td className="px-3 py-2.5"><Badge variant={u.role === 'super_admin' ? 'default' : 'secondary'} className="text-[10px]">{ROLE_LABELS[u.role]}</Badge></td>
+                    <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1">{(u.roles?.length ? u.roles : [u.role]).map((r) => <Badge key={r} variant={r === 'super_admin' ? 'default' : 'secondary'} className="text-[10px]">{ROLE_LABELS[r]}</Badge>)}</div></td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground">{formatDateTime(u.last_login_at)}</td>
                     <td className="px-3 py-2.5 text-center"><Badge variant={u.is_active ? 'success' : 'destructive'} className="text-[10px]">{u.is_active ? 'Active' : 'Inactive'}</Badge></td>
                     <td className="px-3 py-2.5">
@@ -318,12 +353,12 @@ export default function UsersPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editTarget ? 'Edit User' : 'Add New User'}</DialogTitle>
             <DialogDescription>{editTarget ? 'Update role and assignment.' : 'Create a new staff account.'}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
+          <div className="grid gap-3 py-1">
             <div className="space-y-1.5"><Label>Full Name</Label><Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} disabled={!!editTarget && !isSuperAdmin} /></div>
             <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} disabled={!!editTarget && !isSuperAdmin} /></div>
             {!editTarget && <div className="space-y-1.5"><Label>Password</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Min 6 characters" /></div>}
@@ -335,11 +370,18 @@ export default function UsersPage() {
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Role</Label>
-                <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as Role })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>)}</SelectContent>
-                </Select>
+              <div className="space-y-1.5"><Label>Roles</Label>
+                <div className="max-h-28 overflow-y-auto rounded-md border-border p-1">
+                  {ROLES.map((r) => (
+                    <label key={r} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-muted/30">
+                      <Checkbox checked={assignedRoles.includes(r)} onCheckedChange={(checked) => {
+                        setAssignedRoles((prev) => checked ? [...new Set([...prev, r])] : prev.filter((role) => role !== r));
+                      }} />
+                      <span className="text-sm">{ROLE_LABELS[r]}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">Select one or more roles; the first is primary.</p>
               </div>
               <div className="space-y-1.5"><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
             </div>
@@ -380,7 +422,7 @@ export default function UsersPage() {
                     ))
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground">Select all projects this user can access. The first one becomes the default.</p>
+                <p className="text-xs text-muted-foreground">Select projects; the first is default.</p>
               </div>
             </div>
           </div>

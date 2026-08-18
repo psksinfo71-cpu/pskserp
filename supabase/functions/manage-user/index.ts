@@ -20,6 +20,7 @@ interface CreateUserBody extends BaseBody {
   password: string;
   full_name: string;
   role: string;
+  roles?: string[];
   branch_id?: string | null;
   department_id?: string | null;
   project_id?: string | null;
@@ -82,9 +83,11 @@ Deno.serve(async (req: Request) => {
 
     // ---------- CREATE ----------
     if (action === "create") {
-      const { email, password, full_name, role, branch_id, department_id, project_id, phone, designation } = body as CreateUserBody;
+      const { email, password, full_name, role, roles, branch_id, department_id, project_id, phone, designation } = body as CreateUserBody;
+      const assignedRoles = [...new Set((roles?.length ? roles : [role]).filter(Boolean))];
+      const primaryRole = assignedRoles[0];
 
-      if (!email || !password || !full_name || !role) {
+      if (!email || !password || !full_name || !primaryRole) {
         return new Response(JSON.stringify({ error: "email, password, full_name and role are required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -126,7 +129,7 @@ Deno.serve(async (req: Request) => {
           id: newUser.id,
           email: email.trim().toLowerCase(),
           full_name,
-          role,
+          role: primaryRole,
           branch_id: branch_id || null,
           department_id: department_id || null,
           project_id: project_id || null,
@@ -141,6 +144,15 @@ Deno.serve(async (req: Request) => {
         return new Response(JSON.stringify({ error: err.message || "Profile creation failed" }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
+
+      if (assignedRoles.length > 0) {
+        const rolesRes = await fetch(`${supabaseUrl}/rest/v1/user_roles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
+          body: JSON.stringify(assignedRoles.map((assignedRole) => ({ user_id: newUser.id, role: assignedRole }))),
+        });
+        if (!rolesRes.ok) return new Response(JSON.stringify({ error: "Role assignment failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       return new Response(JSON.stringify({ id: newUser.id, email }), {

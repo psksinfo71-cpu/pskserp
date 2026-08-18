@@ -49,6 +49,7 @@ export interface Profile {
   full_name: string;
   phone: string;
   role: Role;
+  roles?: Role[];
   branch_id: string | null;
   department_id: string | null;
   project_id: string | null;
