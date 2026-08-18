@@ -51,4 +51,7 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.generate_voucher_no(text, uuid, uuid, text, text, date) TO authenticated;
+
+-- PostgREST may cache the old overload; remove it so RPC resolves to one signature.
+DROP FUNCTION IF EXISTS public.generate_voucher_no(text, uuid, uuid, text, date);
 NOTIFY pgrst, 'reload schema';
