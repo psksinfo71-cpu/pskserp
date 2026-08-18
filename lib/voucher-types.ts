@@ -55,12 +55,12 @@ export const BANK_ACCOUNT_CODES = ['10021', '10022'];
 
 /** Check if an account code is a cash account. */
 export function isCashAccount(code: string): boolean {
-  return CASH_ACCOUNT_CODES.includes(code);
+  return CASH_ACCOUNT_CODES.includes(code) || code === '1001' || code.startsWith('1001');
 }
 
 /** Check if an account code is a bank account. */
 export function isBankAccount(code: string): boolean {
-  return BANK_ACCOUNT_CODES.includes(code);
+  return BANK_ACCOUNT_CODES.includes(code) || (code !== '1002' && code.startsWith('1002'));
 }
 
 /** Check if a voucher type is one of the new payment/receipt types that need a control account. */

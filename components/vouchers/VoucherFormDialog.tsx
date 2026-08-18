@@ -195,13 +195,13 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing, profile]);
 
-  // Auto-generate preview voucher number when project + type are selected (new vouchers only)
+  // Auto-generate preview voucher number when type is selected (new vouchers only)
   useEffect(() => {
     if (!open || editing) {
       setPreviewVoucherNo('');
       return;
     }
-    if (!voucherType || !projectId) {
+    if (!voucherType) {
       setPreviewVoucherNo('');
       return;
     }
@@ -280,16 +280,45 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
   const addLine = () => setLines((prev) => [...prev, newLine()]);
   const removeLine = (id: string) => setLines((prev) => prev.length > 1 ? prev.filter((l) => l.id !== id) : prev);
 
-  const nextVoucherNo = async (): Promise<string> => {
-    const { data, error } = await supabase.rpc('generate_voucher_no', {
-      p_voucher_type: voucherType,
-      p_project_id: projectId || null,
-      p_branch_id: profile?.branch_id ?? null,
-      p_office_type: branchOfficeType,
-      p_voucher_date: voucherDate,
-    });
-    if (error) throw new Error(`Failed to generate voucher number: ${error.message}`);
-    return data as string;
+  const nextVoucherNo = async (attempt = 0, useRpc = true): Promise<string> => {
+    let rpcError = '';
+    if (useRpc) {
+      const rpc = await supabase.rpc('generate_voucher_no', {
+        p_voucher_type: voucherType,
+        p_project_id: projectId || null,
+        p_branch_id: profile?.branch_id ?? null,
+        p_office_type: branchOfficeType,
+        p_voucher_date: voucherDate,
+      });
+      rpcError = rpc.error?.message ?? '';
+      if (!rpc.error && rpc.data) return rpc.data as string;
+    }
+
+    // Fallback for stale RPC/schema-cache deployments.
+    // Query existing vouchers with matching prefix to determine the next serial.
+    const date = new Date(`${voucherDate}T00:00:00`);
+    const year = date.getFullYear();
+    const financialYear = date.getMonth() >= 6 ? `${year}-${String(year + 1).slice(-2)}` : `${year - 1}-${String(year).slice(-2)}`;
+    let prefix: string;
+    if (branchOfficeType === 'head_office' || !profile?.branch_id) {
+      prefix = `HQ-${voucherType}-${financialYear}-`;
+    } else {
+      const { data: branch } = await supabase.from('branches').select('code').eq('id', profile?.branch_id ?? '').maybeSingle();
+      prefix = `BO-${branch?.code ?? 'BO000'}-${voucherType}-${financialYear}-`;
+    }
+    const { data: matches, error: latestError } = await supabase
+      .from('vouchers').select('voucher_no').like('voucher_no', `${prefix}%`)
+      .order('voucher_no', { ascending: false }).limit(50);
+    if (latestError) throw new Error(`Failed to generate voucher number: ${rpcError || latestError.message}`);
+
+    let maxSeq = 0;
+    if (matches && matches.length > 0) {
+      for (const row of matches) {
+        const seq = Number(row.voucher_no?.match(/(\d+)$/)?.[1] ?? 0);
+        if (seq > maxSeq) maxSeq = seq;
+      }
+    }
+    return `${prefix}${String(maxSeq + 1 + attempt).padStart(6, '0')}`;
   };
 
   const save = async (submit: boolean) => {
@@ -459,24 +488,33 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
         toast.success(postedEdit ? 'Posted voucher updated' : (submit ? 'Voucher submitted for approval' : 'Draft saved'));
       } else {
         let voucherNo = await nextVoucherNo();
-        let { data, error } = await supabase.from('vouchers').insert({
+        let insertRes = await supabase.from('vouchers').insert({
           voucher_no: voucherNo, voucher_type: voucherType, voucher_date: voucherDate,
           branch_id: branchId, project_id: projectId || null,
           narration, amount, status, prepared_by: profile?.id,
           approval_workflow_id: workflowId, current_step: 0,
         }).select().single();
-        // A legacy sequence can still point at an existing voucher number.
-        // Retry once with a fresh atomic number if the unique constraint rejects it.
-        if (error?.code === '23505' && error.message.includes('vouchers_voucher_no_key')) {
-          voucherNo = await nextVoucherNo();
-          const retry = await supabase.from('vouchers').insert({
-            voucher_no: voucherNo, voucher_type: voucherType, voucher_date: voucherDate,
-            branch_id: branchId, project_id: projectId || null,
-            narration, amount, status, prepared_by: profile?.id,
-            approval_workflow_id: workflowId, current_step: 0,
-          }).select().single();
-          data = retry.data;
-          error = retry.error;
+
+        let data = insertRes.data;
+        let error = insertRes.error;
+
+        // If duplicate key error occurs, retry by finding the true max sequence from vouchers table
+        if (error && (error.code === '23505' || error.message?.includes('vouchers_voucher_no_key') || error.message?.includes('duplicate') || error.message?.includes('unique'))) {
+          for (let attempt = 1; attempt <= 10; attempt += 1) {
+            voucherNo = await nextVoucherNo(attempt, false);
+            const retry = await supabase.from('vouchers').insert({
+              voucher_no: voucherNo, voucher_type: voucherType, voucher_date: voucherDate,
+              branch_id: branchId, project_id: projectId || null,
+              narration, amount, status, prepared_by: profile?.id,
+              approval_workflow_id: workflowId, current_step: 0,
+            }).select().single();
+            if (!retry.error && retry.data) {
+              data = retry.data;
+              error = null;
+              break;
+            }
+            error = retry.error;
+          }
         }
         if (error) throw error;
         await supabase.from('voucher_details').insert(
