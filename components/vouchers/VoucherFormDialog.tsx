@@ -286,6 +286,7 @@ export function VoucherFormDialog({ open, onOpenChange, editing, onSaved }: Vouc
       p_project_id: projectId || null,
       p_branch_id: profile?.branch_id ?? null,
       p_office_type: branchOfficeType,
+      p_financial_year: null,
       p_voucher_date: voucherDate,
     });
     if (error) throw new Error(`Failed to generate voucher number: ${error.message}`);
