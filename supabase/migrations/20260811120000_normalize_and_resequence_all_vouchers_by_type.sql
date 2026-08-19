@@ -191,7 +191,7 @@ BEGIN
 
   -- Find highest existing serial in vouchers table with this exact prefix
   SELECT COALESCE(MAX(
-    CASE 
+    CASE
       WHEN voucher_no ~ ('^' || regexp_replace(v_prefix, '([-[\]{}()*+?.,\\^$|#\s])', '\\\1', 'g') || '[0-9]+$')
       THEN substring(voucher_no from '[0-9]+$')::integer
       ELSE 0
@@ -272,7 +272,7 @@ BEGIN
   WHERE sequence_key = v_prefix;
 
   SELECT COALESCE(MAX(
-    CASE 
+    CASE
       WHEN voucher_no ~ ('^' || regexp_replace(v_prefix, '([-[\]{}()*+?.,\\^$|#\s])', '\\\1', 'g') || '[0-9]+$')
       THEN substring(voucher_no from '[0-9]+$')::integer
       ELSE 0
@@ -291,6 +291,10 @@ BEGIN
 
   RETURN v_result;
 END;
-$$;
+$;
+
+-- Permissions
+GRANT EXECUTE ON FUNCTION public.generate_voucher_no(text, uuid, uuid, text, text, date) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.generate_voucher_no_preview(text, uuid, uuid, text, date) TO authenticated, anon;
 
 NOTIFY pgrst, 'reload schema';
