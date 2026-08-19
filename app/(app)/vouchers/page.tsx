@@ -83,7 +83,8 @@ export default function VouchersPage() {
     let q = supabase
       .from('vouchers')
       .select('*, branch: branches!vouchers_branch_id_fkey ( name, office_type ), project: projects!vouchers_project_id_fkey ( name )')
-      .order('created_at', { ascending: false })
+      .order('voucher_date', { ascending: false })
+      .order('voucher_no', { ascending: false })
       .limit(200);
     if (activeProject && role !== 'super_admin') q = q.eq('project_id', activeProject.id);
     const { data, error } = await q;
