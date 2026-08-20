@@ -1,3 +1,6 @@
+-- Required for crypt() and gen_salt() used to seed demo passwords.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 /*
 # Create Super Admin user
 
