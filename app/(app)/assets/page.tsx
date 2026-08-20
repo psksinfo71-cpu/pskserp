@@ -657,7 +657,7 @@ function DepreciationTab({ canManage }: { canManage: boolean }) {
       const error = e as { message?: string; code?: string };
       const message = error.message ?? 'Unable to delete depreciation run';
       if (error.code === 'PGRST202' || message.includes('delete_depreciation_run')) {
-        toast.error('Rollback function is not installed in the local database. Run the latest Supabase migration, then retry.');
+        toast.error('Rollback function is not installed in the database. Please apply the latest Supabase migration and reload the page.');
       } else {
         toast.error(message);
       }
