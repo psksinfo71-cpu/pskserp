@@ -449,7 +449,7 @@ export default function UsersPage() {
                 <Label>Signature</Label>
                 <div className="flex items-center gap-3">
                   {sigTarget.signature_url ? (
-                    <img src={sigTarget.signature_url} alt="Signature" className="h-16 w-32 rounded border border-border object-contain" />
+                    <div className="relative h-16 w-32"><Image src={sigTarget.signature_url} alt="Signature" fill className="rounded border border-border object-contain" /></div>
                   ) : (
                     <div className="flex h-16 w-32 items-center justify-center rounded border border-dashed border-border text-xs text-muted-foreground">No signature</div>
                   )}
@@ -470,7 +470,7 @@ export default function UsersPage() {
                 <Label>Seal / Stamp</Label>
                 <div className="flex items-center gap-3">
                   {sigTarget.seal_url ? (
-                    <img src={sigTarget.seal_url} alt="Seal" className="h-20 w-20 rounded border border-border object-contain" />
+                    <div className="relative h-20 w-20"><Image src={sigTarget.seal_url} alt="Seal" fill className="rounded border border-border object-contain" /></div>
                   ) : (
                     <div className="flex h-20 w-20 items-center justify-center rounded border border-dashed border-border text-xs text-muted-foreground">No seal</div>
                   )}

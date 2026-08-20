@@ -71,7 +71,7 @@ const CAPABILITIES: Record<Role, Capability[]> = {
   ],
   finance_manager: [
     'review_voucher', 'edit_voucher', 'view_all_branches', 'view_consolidated', 'view_reports', 'manage_budget',
-    'bank_reconciliation', 'view_audit_logs', 'create_sub_head',
+    'bank_reconciliation', 'view_audit_logs', 'create_sub_head', 'manage_master_data',
   ],
   accounts_manager: [
     'create_voucher', 'edit_voucher', 'check_voucher', 'view_reports',

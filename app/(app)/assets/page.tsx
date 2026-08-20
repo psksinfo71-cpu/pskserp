@@ -647,20 +647,54 @@ function DepreciationTab({ canManage }: { canManage: boolean }) {
     if (!deleteRunTarget) return;
     setDeletingRun(true);
     try {
-      const { error } = await supabase.rpc('delete_depreciation_run', { p_run_id: deleteRunTarget.id });
-      if (error) throw error;
+      if (deleteRunTarget.status !== 'completed') {
+        throw new Error('Only completed runs can be deleted');
+      }
+
+      const { data: laterRun } = await supabase
+        .from('asset_depreciation_runs')
+        .select('id')
+        .eq('status', 'completed')
+        .gt('run_at', deleteRunTarget.run_at)
+        .limit(1)
+        .maybeSingle();
+      if (laterRun) {
+        throw new Error('Delete the latest depreciation run first');
+      }
+
+      const { data: txns } = await supabase
+        .from('asset_transactions')
+        .select('asset_id, amount')
+        .eq('depreciation_run_id', deleteRunTarget.id);
+
+      if (txns && txns.length > 0) {
+        for (const txn of txns) {
+          const { data: asset } = await supabase.from('assets').select('accumulated_depreciation, current_value').eq('id', txn.asset_id).single();
+          if (asset) {
+            await supabase.from('assets').update({
+              accumulated_depreciation: Math.max(0, (asset.accumulated_depreciation ?? 0) - txn.amount),
+              current_value: (asset.current_value ?? 0) + txn.amount,
+            }).eq('id', txn.asset_id);
+          }
+        }
+      }
+
+      await supabase.from('asset_transactions').delete().eq('depreciation_run_id', deleteRunTarget.id);
+
+      if (deleteRunTarget.voucher_id) {
+        await supabase.from('voucher_details').delete().eq('voucher_id', deleteRunTarget.voucher_id);
+        await supabase.from('vouchers').delete().eq('id', deleteRunTarget.voucher_id);
+      }
+
+      await supabase.from('asset_depreciation_runs').delete().eq('id', deleteRunTarget.id);
+
       await logAudit({ action: 'delete', table_name: 'asset_depreciation_runs', record_id: deleteRunTarget.id, old_values: { period: deleteRunTarget.period_label, total: deleteRunTarget.total_depreciation } });
       toast.success('Depreciation run deleted and asset values restored');
       setDeleteRunTarget(null);
       load();
     } catch (e) {
       const error = e as { message?: string; code?: string };
-      const message = error.message ?? 'Unable to delete depreciation run';
-      if (error.code === 'PGRST202' || message.includes('delete_depreciation_run')) {
-        toast.error('Rollback function is not installed in the database. Please apply the latest Supabase migration and reload the page.');
-      } else {
-        toast.error(message);
-      }
+      toast.error(error.message ?? 'Unable to delete depreciation run');
     } finally {
       setDeletingRun(false);
     }
