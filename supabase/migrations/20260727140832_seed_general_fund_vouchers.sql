@@ -60,6 +60,7 @@ SELECT x.code, x.name,
             ELSE NULL END,
        false, true, 0
 FROM (VALUES
+  ('1001','Cash in Hand'), ('10021','Sonali Bank'), ('10022','Krishi Bank'),
   ('4002','Agriculture/Income Generation'), ('4003','Bank Interest'),
   ('4004','Capital Gain From Sale Fixed Asset'), ('4005','FDR Interest'),
   ('4009','Husking Mill'), ('4011','Local Donation'),
@@ -77,9 +78,9 @@ FROM (VALUES
   ('1012','Loan to Different Fund'), ('1102','Office Equipment'),
   ('2021','Staff Security Money Payable')
 ) AS x(code, name)
-WHERE NOT EXISTS (
-  SELECT 1 FROM public.chart_of_accounts a WHERE a.code = x.code
-);
+ON CONFLICT (code) DO UPDATE SET
+  name = EXCLUDED.name,
+  is_active = true;
 
 -- 5. Helper function for creating balanced vouchers
 CREATE OR REPLACE FUNCTION make_general_fund_voucher(
