@@ -612,6 +612,8 @@ function DepreciationTab({ canManage }: { canManage: boolean }) {
   const [runs, setRuns] = useState<DepreciationRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [deleteRunTarget, setDeleteRunTarget] = useState<DepreciationRun | null>(null);
+  const [deletingRun, setDeletingRun] = useState(false);
   const [runMode, setRunMode] = useState<'monthly' | 'yearly'>('monthly');
   const [runDate, setRunDate] = useState(toInputDate(new Date()));
 
@@ -640,6 +642,29 @@ function DepreciationTab({ canManage }: { canManage: boolean }) {
   }).filter((p) => p.depn > 0);
 
   const totalPreview = preview.reduce((s, p) => s + p.depn, 0);
+
+  const deleteDepreciationRun = async () => {
+    if (!deleteRunTarget) return;
+    setDeletingRun(true);
+    try {
+      const { error } = await supabase.rpc('delete_depreciation_run', { p_run_id: deleteRunTarget.id });
+      if (error) throw error;
+      await logAudit({ action: 'delete', table_name: 'asset_depreciation_runs', record_id: deleteRunTarget.id, old_values: { period: deleteRunTarget.period_label, total: deleteRunTarget.total_depreciation } });
+      toast.success('Depreciation run deleted and asset values restored');
+      setDeleteRunTarget(null);
+      load();
+    } catch (e) {
+      const error = e as { message?: string; code?: string };
+      const message = error.message ?? 'Unable to delete depreciation run';
+      if (error.code === 'PGRST202' || message.includes('delete_depreciation_run')) {
+        toast.error('Rollback function is not installed in the local database. Run the latest Supabase migration, then retry.');
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setDeletingRun(false);
+    }
+  };
 
   const runDepreciation = async () => {
     if (preview.length === 0) { toast.error('No assets eligible for depreciation'); return; }
@@ -877,6 +902,7 @@ function DepreciationTab({ canManage }: { canManage: boolean }) {
                   <th className="px-4 py-2.5 font-medium">Run At</th>
                   <th className="px-4 py-2.5 text-right font-medium">Total Depn</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
+                  {canManage && <th className="px-3 py-2.5 text-right font-medium">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -887,6 +913,7 @@ function DepreciationTab({ canManage }: { canManage: boolean }) {
                     <td className="px-4 py-2.5 text-xs">{formatDate(r.run_at)}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{formatCurrency(r.total_depreciation)}</td>
                     <td className="px-4 py-2.5"><Badge variant={r.status === 'completed' ? 'success' : 'warning'} className="text-[10px] capitalize">{r.status}</Badge></td>
+                    {canManage && <td className="px-3 py-2.5 text-right"><Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => setDeleteRunTarget(r)} title="Delete run"><Trash2 className="h-3.5 w-3.5" /></Button></td>}
                   </tr>
                 ))}
               </tbody>
@@ -894,6 +921,23 @@ function DepreciationTab({ canManage }: { canManage: boolean }) {
           </div>
         )}
       </Card>
+
+      <AlertDialog open={!!deleteRunTarget} onOpenChange={(open) => { if (!open) setDeleteRunTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete depreciation run?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the run, its journal voucher and depreciation transactions. All affected assets&apos; accumulated depreciation and current value will be restored to their previous values. Only the latest completed run can be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingRun}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={deleteDepreciationRun} disabled={deletingRun} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deletingRun ? 'Deleting...' : 'Delete and Restore'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
