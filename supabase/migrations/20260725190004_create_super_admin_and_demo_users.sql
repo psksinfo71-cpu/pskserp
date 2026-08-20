@@ -1,5 +1,6 @@
 -- Required for crypt() and gen_salt() used to seed demo passwords.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+SET search_path = public, extensions;
 
 /*
 # Create Super Admin user
@@ -31,7 +32,7 @@ BEGIN
       'authenticated',
       'authenticated',
       'psksinfo71@gmail.com',
-      crypt('Admin@2026', gen_salt('bf', 10)),
+      crypt('Admin@2026', extensions.gen_salt('bf')),
       now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
       '{"full_name":"Super Admin"}'::jsonb,
@@ -61,7 +62,7 @@ BEGIN
     ) VALUES (
       fm_id, '00000000-0000-0000-0000-000000000000',
       'authenticated','authenticated','fm@psks.local',
-      crypt('Manager@2026', gen_salt('bf', 10)), now(),
+      crypt('Manager@2026', extensions.gen_salt('bf')), now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
       '{"full_name":"Finance Manager"}'::jsonb,
       now(), now(), '', '', '', ''
@@ -89,7 +90,7 @@ BEGIN
     ) VALUES (
       acc_id, '00000000-0000-0000-0000-000000000000',
       'authenticated','authenticated','acc@psks.local',
-      crypt('Acc@2026', gen_salt('bf', 10)), now(),
+      crypt('Acc@2026', extensions.gen_salt('bf')), now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
       '{"full_name":"Accountant Demo"}'::jsonb,
       now(), now(), '', '', '', ''
