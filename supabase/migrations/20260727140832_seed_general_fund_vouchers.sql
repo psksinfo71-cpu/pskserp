@@ -42,7 +42,46 @@ UPDATE chart_of_accounts SET opening_balance = 0 WHERE code = '1001';
 UPDATE chart_of_accounts SET opening_balance = 250000 WHERE code = '10021';
 UPDATE chart_of_accounts SET opening_balance = 67224 WHERE code = '10022';
 
--- 4. Helper function for creating balanced vouchers
+-- 4. Ensure every account referenced by the seed data exists.
+-- This keeps the seed migration safe when older reference-data migrations used
+-- a different account list or were partially applied.
+INSERT INTO public.chart_of_accounts
+  (code, name, account_type, parent_id, is_group, is_active, opening_balance)
+SELECT x.code, x.name,
+       CASE WHEN x.code LIKE '4%' THEN 'income'
+            WHEN x.code LIKE '5%' THEN 'expense'
+            WHEN x.code LIKE '1%' THEN 'asset'
+            WHEN x.code LIKE '2%' THEN 'liability'
+            ELSE 'asset' END,
+       CASE WHEN x.code LIKE '4%' THEN (SELECT id FROM public.chart_of_accounts WHERE code = '4' LIMIT 1)
+            WHEN x.code LIKE '5%' THEN (SELECT id FROM public.chart_of_accounts WHERE code = '5' LIMIT 1)
+            WHEN x.code LIKE '1%' THEN (SELECT id FROM public.chart_of_accounts WHERE code = '10' LIMIT 1)
+            WHEN x.code LIKE '2%' THEN (SELECT id FROM public.chart_of_accounts WHERE code = '2' LIMIT 1)
+            ELSE NULL END,
+       false, true, 0
+FROM (VALUES
+  ('4002','Agriculture/Income Generation'), ('4003','Bank Interest'),
+  ('4004','Capital Gain From Sale Fixed Asset'), ('4005','FDR Interest'),
+  ('4009','Husking Mill'), ('4011','Local Donation'),
+  ('4012','Members Subscription Fees'), ('4014','Office Rent'),
+  ('4015','Others'), ('4019','Guest Room'), ('4020','Training Center'),
+  ('4022','Office Overhead'), ('5004','Audit Fees'),
+  ('5006','Bank Charge & Commission'), ('5017','Electricity, Gas & Wasa Bill'),
+  ('5018','Entertainment'), ('5021','Fuel and Lubricant'),
+  ('5026','Interest on Staff Security'), ('5028','Land and Other Tax'),
+  ('5032','Membership & Network Fees'), ('5035','Others'),
+  ('5036','Postage and Communication'), ('5037','Program Cost'),
+  ('5039','Repair and Maintenance'), ('5040','Salary and Benefits'),
+  ('5047','Stationary and Printing'), ('5049','Travel & Daily Allowance'),
+  ('5050','Husking Mill Repair and Maintenance'), ('1003','FDR (Fixed Deposit Receipt)'),
+  ('1012','Loan to Different Fund'), ('1102','Office Equipment'),
+  ('2021','Staff Security Money Payable')
+) AS x(code, name)
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.chart_of_accounts a WHERE a.code = x.code
+);
+
+-- 5. Helper function for creating balanced vouchers
 CREATE OR REPLACE FUNCTION make_general_fund_voucher(
   p_no text, p_type text, p_date date, p_narration text, p_amount numeric,
   p_dr_code text, p_cr_code text, p_prep uuid, p_apprv uuid, p_br uuid
@@ -50,6 +89,11 @@ CREATE OR REPLACE FUNCTION make_general_fund_voucher(
 DECLARE
   v_id uuid;
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.chart_of_accounts WHERE code = p_dr_code)
+     OR NOT EXISTS (SELECT 1 FROM public.chart_of_accounts WHERE code = p_cr_code) THEN
+    RAISE EXCEPTION 'Missing account code(s) for voucher %: debit %, credit %', p_no, p_dr_code, p_cr_code;
+  END IF;
+
   INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, branch_id, narration, amount, status, prepared_by, approved_by, is_locked)
   VALUES (p_no, p_type, p_date, p_br, p_narration, p_amount, 'posted', p_prep, p_apprv, true)
   ON CONFLICT (voucher_no) DO NOTHING
