@@ -1,8 +1,11 @@
--- Step 1: Remove all existing income/expense sub-accounts (leaves first, then groups)
--- Must delete in order: leaves → sub-groups (to satisfy any FK constraints)
-DELETE FROM public.chart_of_accounts
-WHERE account_type IN ('income','expense')
-  AND code NOT IN ('4','5');
+-- Step 1: Retire old income/expense sub-accounts without deleting them.
+-- Voucher details keep a foreign-key reference to these accounts, so deleting
+-- them would make a clean database reset fail. Existing accounts are retained
+-- for historical vouchers and hidden from new entry selections.
+UPDATE public.chart_of_accounts
+SET is_active = false
+WHERE account_type IN ('income', 'expense')
+  AND code NOT IN ('4', '5');
 
 -- Step 2: Update top-level groups to clean names
 UPDATE public.chart_of_accounts SET name = 'Income'      WHERE code = '4';
