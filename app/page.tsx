@@ -67,31 +67,12 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="relative space-y-6">
+        <div className="relative flex flex-1 items-center justify-center">
           {loginImageUrl && (
-            <div className="flex justify-center">
-              <div className="relative h-60 w-60 overflow-hidden rounded-full border-4 border-white/20 shadow-2xl">
-                <Image src={loginImageUrl} alt="Organization" fill className="object-cover" />
-              </div>
+            <div className="relative h-80 w-80 overflow-hidden rounded-full border-4 border-white/20 shadow-2xl">
+              <Image src={loginImageUrl} alt="Organization" fill className="object-cover" />
             </div>
           )}
-          <h2 className="max-w-md text-3xl font-semibold leading-tight text-balance">
-            Complete double-entry accounting for multi-branch NGO &amp; microfinance operations
-          </h2>
-          <div className="grid max-w-md gap-4">
-            {[
-              { icon: Building2, text: 'Branch, project & donor-wise accounting' },
-              { icon: ShieldCheck, text: 'Role-based access with full audit trail' },
-              { icon: Wallet, text: 'Trial balance, ledger & financial statements' },
-            ].map((f) => (
-              <div key={f.text} className="flex items-center gap-3 text-sm">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10">
-                  <f.icon className="h-4 w-4" />
-                </div>
-                <span className="text-sidebar-foreground/80">{f.text}</span>
-              </div>
-            ))}
-          </div>
         </div>
 
         <div className="relative text-xs text-sidebar-foreground/50">
