@@ -58,10 +58,19 @@ export function PettyCashRequisition({ open, onOpenChange, expenses, totalExpens
           .summary-row td { background: #f9f9f9; font-weight: 600; }
           .total-row td { background: #e8e8e8; font-weight: 700; border-top: 2px solid #000; }
           .signatures { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 10px; }
-          .sig-block { text-align: center; width: 30%; }
+          .sig-block { text-align: center; width: 30%; display: inline-block; vertical-align: top; }
           .sig-line { border-top: 1px solid #000; margin-top: 50px; padding-top: 5px; }
           .sig-name { font-weight: 600; font-size: 10.5px; }
           .sig-designation { font-size: 9.5px; color: #555; }
+          /* Override Tailwind classes for print */
+          .flex { display: flex !important; }
+          .justify-between { justify-content: space-between !important; }
+          .w-1\\/3 { width: 33.333333% !important; }
+          .text-center { text-align: center !important; }
+          .mt-12 { margin-top: 3rem !important; }
+          .border-t { border-top-width: 1px !important; border-top-style: solid !important; }
+          .border-foreground { border-color: #1a1a1a !important; }
+          .pt-2 { padding-top: 0.5rem !important; }
           @media print { body { padding: 10px; } }
         </style>
       </head>
