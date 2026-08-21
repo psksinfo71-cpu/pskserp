@@ -15,13 +15,15 @@ import {
 } from '@/lib/queries';
 import {
   Wallet, Landmark, TrendingUp, TrendingDown, Clock, FileText,
-  ArrowRight, Activity, AlertCircle,
+  ArrowRight, Activity, AlertCircle, Receipt,
 } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell,
 } from 'recharts';
 import Link from 'next/link';
+import { usePettyCash, PETTY_CASH_MAX } from '@/hooks/use-petty-cash';
+import { PettyCashRequisition } from '@/components/petty-cash/PettyCashRequisition';
 
 const PIE_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
@@ -42,6 +44,8 @@ export default function DashboardPage() {
   const [branches, setBranches] = useState<{ branch: string; income: number; expense: number }[]>([]);
   const [recent, setRecent] = useState<(any)[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pettyCashOpen, setPettyCashOpen] = useState(false);
+  const pettyCash = usePettyCash();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -164,28 +168,39 @@ export default function DashboardPage() {
       </div>
 
       {/* Alerts */}
-      {kpis && (kpis.pendingApprovals > 0 || kpis.totalCash < 50000) && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {kpis.pendingApprovals > 0 && (
-            <div className="flex items-center gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3">
-              <AlertCircle className="h-5 w-5 shrink-0 text-warning" />
-              <div className="text-sm">
-                <p className="font-medium text-warning-foreground">{kpis.pendingApprovals} voucher(s) awaiting approval</p>
-                <Link href="/vouchers" className="text-xs text-primary hover:underline">Review now</Link>
-              </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {kpis && kpis.pendingApprovals > 0 && (
+          <div className="flex items-center gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-warning" />
+            <div className="text-sm">
+              <p className="font-medium text-warning-foreground">{kpis.pendingApprovals} voucher(s) awaiting approval</p>
+              <Link href="/vouchers" className="text-xs text-primary hover:underline">Review now</Link>
             </div>
-          )}
-          {kpis.totalCash < 50000 && (
-            <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
+          </div>
+        )}
+        {pettyCash.alert && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
+            <div className="flex items-center gap-3">
               <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
               <div className="text-sm">
-                <p className="font-medium text-destructive">Low cash alert</p>
-                <p className="text-xs text-muted-foreground">Cash in hand below ৳50,000</p>
+                <p className="font-medium text-destructive">Low cash alert - Petty Cash at {pettyCash.burnRate.toFixed(1)}% used</p>
+                <p className="text-xs text-muted-foreground">{formatCurrency(pettyCash.totalExpenses)} of {formatCurrency(PETTY_CASH_MAX)} spent ({formatCurrency(pettyCash.balance)} remaining)</p>
               </div>
             </div>
-          )}
-        </div>
-      )}
+            <Button variant="destructive" size="sm" className="shrink-0" onClick={() => setPettyCashOpen(true)}>
+              <Receipt className="mr-1.5 h-3.5 w-3.5" /> Petty Cash Requisition
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Petty Cash Requisition Modal */}
+      <PettyCashRequisition
+        open={pettyCashOpen}
+        onOpenChange={setPettyCashOpen}
+        expenses={pettyCash.expenses}
+        totalExpenses={pettyCash.totalExpenses}
+      />
 
       {/* Charts row */}
       <div className="grid gap-4 lg:grid-cols-3">
