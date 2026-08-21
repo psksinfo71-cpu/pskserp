@@ -15,7 +15,7 @@ import Image from 'next/image';
 export default function LoginPage() {
   const { signIn, session, loading } = useAuth();
   const router = useRouter();
-  const { logoUrl, orgFullName } = useOrgSettings();
+  const { logoUrl, orgFullName, loginImageUrl } = useOrgSettings();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -68,6 +68,13 @@ export default function LoginPage() {
         </div>
 
         <div className="relative space-y-6">
+          {loginImageUrl && (
+            <div className="flex justify-center">
+              <div className="relative h-60 w-60 overflow-hidden rounded-full border-4 border-white/20 shadow-2xl">
+                <Image src={loginImageUrl} alt="Organization" fill className="object-cover" />
+              </div>
+            </div>
+          )}
           <h2 className="max-w-md text-3xl font-semibold leading-tight text-balance">
             Complete double-entry accounting for multi-branch NGO &amp; microfinance operations
           </h2>

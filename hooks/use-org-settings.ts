@@ -7,6 +7,7 @@ export interface OrgSettings {
   orgName: string;
   orgFullName: string;
   logoUrl: string | null;
+  loginImageUrl: string | null;
   loading: boolean;
 }
 
@@ -36,6 +37,7 @@ export function useOrgSettings(): OrgSettings {
     orgName: settings.org_name ?? '',
     orgFullName: settings.org_full_name ?? '',
     logoUrl: settings.org_logo_url ?? null,
+    loginImageUrl: settings.login_image_url ?? null,
     loading,
   };
 }

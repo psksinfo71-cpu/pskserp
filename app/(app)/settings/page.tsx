@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingLoginImage, setUploadingLoginImage] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +92,45 @@ export default function SettingsPage() {
     toast.success('Logo removed');
   };
 
+  const handleLoginImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
+      toast.error('Only PNG, JPEG and WebP files are allowed');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be under 5MB');
+      return;
+    }
+    setUploadingLoginImage(true);
+    try {
+      const ext = file.type === 'image/png' ? 'png' : file.type === 'image/jpeg' ? 'jpg' : 'webp';
+      const path = `login-image.${ext}`;
+      const { error: upErr } = await supabase.storage.from('org-logos').upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from('org-logos').getPublicUrl(path);
+      const imgUrl = `${pub.publicUrl}?t=${Date.now()}`;
+      await supabase.from('settings').upsert({ key: 'login_image_url', value: imgUrl, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+      update('login_image_url', imgUrl);
+      await logAudit({ action: 'update', table_name: 'settings', new_values: { login_image_url: imgUrl } });
+      toast.success('Login page image uploaded');
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setUploadingLoginImage(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleLoginImageRemove = async () => {
+    const ext = settings.login_image_url?.split('.').pop()?.split('?')[0] ?? 'png';
+    await supabase.storage.from('org-logos').remove([`login-image.${ext}`]);
+    await supabase.from('settings').upsert({ key: 'login_image_url', value: '', updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    update('login_image_url', '');
+    toast.success('Login page image removed');
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -125,6 +165,31 @@ export default function SettingsPage() {
                     </Button>
                   )}
                   <p className="text-[11px] text-muted-foreground">PNG, JPG or SVG. Max 2MB. Shown on login, reports &amp; vouchers.</p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Login Page Image</Label>
+              <div className="flex items-center gap-4">
+                <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-border bg-muted/30">
+                  {settings.login_image_url ? (
+                    <Image src={settings.login_image_url} alt="Login Image" width={96} height={96} className="h-full w-full object-cover" />
+                  ) : (
+                    <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted">
+                    {uploadingLoginImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                    {uploadingLoginImage ? 'Uploading...' : 'Upload Image'}
+                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLoginImageUpload} disabled={uploadingLoginImage} />
+                  </label>
+                  {settings.login_image_url && (
+                    <Button variant="outline" size="sm" className="text-xs" onClick={handleLoginImageRemove}>
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Remove
+                    </Button>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">Shown as a circular image on the login page. PNG, JPG or WebP. Max 5MB.</p>
                 </div>
               </div>
             </div>
