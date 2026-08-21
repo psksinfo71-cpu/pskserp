@@ -23,13 +23,33 @@ export function usePettyCash(): PettyCashData {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch posted CPV (Cash Payment Voucher) vouchers with their expense details
+      // Find all posted vouchers that have a credit from Cash in Hand (1001)
+      // This represents cash payments = petty cash expenses
+      const { data: cashOutDetails } = await supabase
+        .from('voucher_details')
+        .select(`
+          id, voucher_id, debit, credit, narration,
+          account: chart_of_accounts!inner ( name, code, account_type )
+        `)
+        .gt('credit', 0)
+        .eq('account.code', '1001');
+
+      if (!cashOutDetails || cashOutDetails.length === 0) {
+        setExpenses([]);
+        setTotalExpenses(0);
+        setLoading(false);
+        return;
+      }
+
+      // Get unique voucher IDs
+      const voucherIds = [...new Set(cashOutDetails.map((d) => d.voucher_id))];
+
+      // Fetch those vouchers
       const { data: vouchers } = await supabase
         .from('vouchers')
-        .select('id, voucher_no, voucher_date, narration, voucher_type')
+        .select('id, voucher_no, voucher_date, narration')
         .eq('status', 'posted')
-        .in('voucher_type', ['CPV', 'PV'])
-        .order('voucher_date', { ascending: false });
+        .in('id', voucherIds);
 
       if (!vouchers || vouchers.length === 0) {
         setExpenses([]);
@@ -38,10 +58,10 @@ export function usePettyCash(): PettyCashData {
         return;
       }
 
-      const voucherIds = vouchers.map((v) => v.id);
+      const voucherMap = new Map(vouchers.map((v) => [v.id, v]));
 
-      // Fetch voucher details joined with chart_of_accounts for head of account
-      const { data: details } = await supabase
+      // Fetch ALL details for these vouchers to find expense debit lines
+      const { data: allDetails } = await supabase
         .from('voucher_details')
         .select(`
           id, voucher_id, debit, credit, narration,
@@ -53,10 +73,10 @@ export function usePettyCash(): PettyCashData {
       let total = 0;
 
       for (const v of vouchers) {
-        const vDetails = (details ?? []).filter((d) => d.voucher_id === v.id);
+        const vDetails = (allDetails ?? []).filter((d) => d.voucher_id === v.id);
         for (const d of vDetails) {
           const acc = d.account as unknown as { name: string; code: string; account_type: string };
-          // Expense lines: debit from expense accounts, OR credit from cash account (1001)
+          // Expense lines: debit from expense accounts
           if (acc.account_type === 'expense' && Number(d.debit) > 0) {
             const amt = Number(d.debit);
             total += amt;
