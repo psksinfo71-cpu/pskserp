@@ -58,8 +58,8 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
         }));
       }
 
-      // Fetch all signer profiles: prepared_by, reviewed_by, verified_by, approved_by
-      const ids = [v.prepared_by, v.reviewed_by, v.verified_by, v.approved_by].filter(Boolean) as string[];
+      // Fetch all signer profiles: prepared_by, checked_by, verified_by, approved_by
+      const ids = [v.prepared_by, v.checked_by, v.verified_by, v.approved_by].filter(Boolean) as string[];
       let profileMap: Record<string, Profile> = {};
       if (ids.length > 0) {
         const { data: profs } = await supabase
@@ -72,7 +72,7 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
       setSigners([
         { profile: v.verified_by ? profileMap[v.verified_by] ?? null : null, label: 'Received By', status: '', date: v.updated_at, hideDetails: true },
         { profile: v.prepared_by ? profileMap[v.prepared_by] ?? null : null, label: 'Prepared By', status: v.prepared_by ? (profileMap[v.prepared_by]?.designation ?? 'Accounts Manager') : 'Accounts Manager', date: v.created_at },
-        { profile: v.reviewed_by ? profileMap[v.reviewed_by] ?? null : null, label: 'Checked By', status: v.reviewed_by ? (profileMap[v.reviewed_by]?.designation ?? 'Finance Manager') : 'Finance Manager', date: v.updated_at },
+        { profile: v.checked_by ? profileMap[v.checked_by] ?? null : null, label: 'Checked By', status: v.checked_by ? (profileMap[v.checked_by]?.designation ?? 'Finance Manager') : 'Finance Manager', date: v.updated_at },
         { profile: v.approved_by ? profileMap[v.approved_by] ?? null : null, label: 'Approved By', status: v.approved_by ? (profileMap[v.approved_by]?.designation ?? 'Deputy Executive Director') : 'Deputy Executive Director', date: v.updated_at },
       ]);
 

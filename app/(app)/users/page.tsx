@@ -119,8 +119,8 @@ export default function UsersPage() {
         const emailChanged = isSuperAdmin && form.email.trim().toLowerCase() !== editTarget.email;
         const nameChanged = form.full_name.trim() !== editTarget.full_name;
 
-        // If super_admin changed email/name, or reset password, update auth.users via edge function
-        if (isSuperAdmin && (emailChanged || nameChanged || form.password)) {
+        // If super_admin changed email or reset password, update auth.users via edge function
+        if (isSuperAdmin && (emailChanged || form.password)) {
           const apiUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/manage-user`;
           const { data: session } = await supabase.auth.getSession();
           const res = await fetch(apiUrl, {
@@ -134,7 +134,6 @@ export default function UsersPage() {
               action: 'update',
               user_id: editTarget.id,
               email: emailChanged ? form.email.trim() : undefined,
-              full_name: nameChanged ? form.full_name.trim() : undefined,
               password: form.password || undefined,
             }),
           });
