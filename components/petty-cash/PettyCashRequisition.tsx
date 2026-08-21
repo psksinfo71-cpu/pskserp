@@ -28,6 +28,7 @@ interface PettyCashRequisitionProps {
 
 export function PettyCashRequisition({ open, onOpenChange, expenses, totalExpenses }: PettyCashRequisitionProps) {
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const currentMonth = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   const balance = PETTY_CASH_LIMIT - totalExpenses;
   const burnRate = ((totalExpenses / PETTY_CASH_LIMIT) * 100).toFixed(1);
 
@@ -93,7 +94,7 @@ export function PettyCashRequisition({ open, onOpenChange, expenses, totalExpens
           <div className="mb-4 border-b-2 border-foreground pb-3 text-center">
             <h1 className="text-base font-bold uppercase tracking-wide">Palashipara Samaj Kallyan Samity</h1>
             <h2 className="mt-0.5 text-sm font-semibold">Gangni, Meherpur</h2>
-            <p className="mt-1 italic text-muted-foreground">Petty Cash Requisition / Adjustment Form</p>
+            <p className="mt-1 italic text-muted-foreground">Petty Cash Requisition / Adjustment Form - {currentMonth}</p>
           </div>
 
           {/* Upper Summary Table */}

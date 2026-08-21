@@ -23,8 +23,12 @@ export function usePettyCash(): PettyCashData {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Find all posted vouchers that have a credit from Cash in Hand (1001)
-      // This represents cash payments = petty cash expenses
+      // Current month date range
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+
+      // Fetch posted vouchers this month that have credit from Cash in Hand (1001)
       const { data: cashOutDetails } = await supabase
         .from('voucher_details')
         .select(`
@@ -41,15 +45,16 @@ export function usePettyCash(): PettyCashData {
         return;
       }
 
-      // Get unique voucher IDs
       const voucherIds = [...new Set(cashOutDetails.map((d) => d.voucher_id))];
 
-      // Fetch those vouchers
+      // Fetch those vouchers - CURRENT MONTH ONLY
       const { data: vouchers } = await supabase
         .from('vouchers')
         .select('id, voucher_no, voucher_date, narration')
         .eq('status', 'posted')
-        .in('id', voucherIds);
+        .in('id', voucherIds)
+        .gte('voucher_date', monthStart)
+        .lte('voucher_date', monthEnd);
 
       if (!vouchers || vouchers.length === 0) {
         setExpenses([]);
@@ -58,7 +63,7 @@ export function usePettyCash(): PettyCashData {
         return;
       }
 
-      const voucherMap = new Map(vouchers.map((v) => [v.id, v]));
+      const currentVoucherIds = vouchers.map((v) => v.id);
 
       // Fetch ALL details for these vouchers to find expense debit lines
       const { data: allDetails } = await supabase
@@ -67,7 +72,7 @@ export function usePettyCash(): PettyCashData {
           id, voucher_id, debit, credit, narration,
           account: chart_of_accounts!inner ( name, code, account_type )
         `)
-        .in('voucher_id', voucherIds);
+        .in('voucher_id', currentVoucherIds);
 
       const expenseList: PettyCashExpense[] = [];
       let total = 0;
@@ -76,7 +81,6 @@ export function usePettyCash(): PettyCashData {
         const vDetails = (allDetails ?? []).filter((d) => d.voucher_id === v.id);
         for (const d of vDetails) {
           const acc = d.account as unknown as { name: string; code: string; account_type: string };
-          // Expense lines: debit from expense accounts
           if (acc.account_type === 'expense' && Number(d.debit) > 0) {
             const amt = Number(d.debit);
             total += amt;
@@ -92,7 +96,6 @@ export function usePettyCash(): PettyCashData {
         }
       }
 
-      // Sort by date descending
       expenseList.sort((a, b) => b.voucher_date.localeCompare(a.voucher_date));
 
       setExpenses(expenseList);
