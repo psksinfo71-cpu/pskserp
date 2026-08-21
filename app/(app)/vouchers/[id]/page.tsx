@@ -176,13 +176,14 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
           {signers.map((s, i) => (
             <div key={i} className="text-center">
-              <div className="border-b border-gray-400 w-full mb-1" style={{ minHeight: '48px' }}>
-                {s.profile?.signature_url && (
-                  <div className="flex h-12 items-end justify-center pb-1">
-                    <Image src={s.profile.signature_url} alt="Signature" width={224} height={48} className="max-h-12 max-w-full object-contain" />
-                  </div>
-                )}
-              </div>
+              {s.profile?.signature_url ? (
+                <div className="flex h-12 items-end justify-center pb-1">
+                  <Image src={s.profile.signature_url} alt="Signature" width={224} height={48} className="max-h-12 max-w-full object-contain" />
+                </div>
+              ) : (
+                <div className="h-12" />
+              )}
+              <div className="border-b border-gray-400 w-full" />
               <p className="text-xs font-semibold">{s.label}</p>
               {!s.hideDetails && (
                 <>
