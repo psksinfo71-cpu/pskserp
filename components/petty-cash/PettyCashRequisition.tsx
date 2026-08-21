@@ -68,9 +68,11 @@ export function PettyCashRequisition({ open, onOpenChange, expenses, totalExpens
           .w-1\\/3 { width: 33.333333% !important; }
           .text-center { text-align: center !important; }
           .mt-12 { margin-top: 3rem !important; }
-          .border-t { border-top-width: 1px !important; border-top-style: solid !important; }
-          .border-foreground { border-color: #1a1a1a !important; }
           .pt-2 { padding-top: 0.5rem !important; }
+          .mb-2 { margin-bottom: 0.5rem !important; }
+          .mx-auto { margin-left: auto !important; margin-right: auto !important; }
+          .w-3\\/5 { width: 60% !important; }
+          .border-t { border-top-width: 1px !important; border-top-style: solid !important; border-top-color: #1a1a1a !important; }
           @media print { body { padding: 10px; } }
         </style>
       </head>
