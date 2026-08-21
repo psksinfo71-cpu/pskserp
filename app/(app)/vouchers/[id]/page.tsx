@@ -17,6 +17,7 @@ interface SignerInfo {
   label: string;
   status: string;
   date: string | null;
+  hideDetails?: boolean;
 }
 
 
@@ -69,7 +70,7 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
       }
 
       setSigners([
-        { profile: v.verified_by ? profileMap[v.verified_by] ?? null : null, label: 'Received By', status: v.verified_by ? (profileMap[v.verified_by]?.designation ?? 'Receiver') : 'Receiver', date: v.updated_at },
+        { profile: v.verified_by ? profileMap[v.verified_by] ?? null : null, label: 'Received By', status: '', date: v.updated_at, hideDetails: true },
         { profile: v.prepared_by ? profileMap[v.prepared_by] ?? null : null, label: 'Prepared By', status: v.prepared_by ? (profileMap[v.prepared_by]?.designation ?? 'Accounts Manager') : 'Accounts Manager', date: v.created_at },
         { profile: v.reviewed_by ? profileMap[v.reviewed_by] ?? null : null, label: 'Checked By', status: v.reviewed_by ? (profileMap[v.reviewed_by]?.designation ?? 'Finance Manager') : 'Finance Manager', date: v.updated_at },
         { profile: v.approved_by ? profileMap[v.approved_by] ?? null : null, label: 'Approved By', status: v.approved_by ? (profileMap[v.approved_by]?.designation ?? 'Deputy Executive Director') : 'Deputy Executive Director', date: v.updated_at },
@@ -107,7 +108,6 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
       {/* Printable voucher */}
       <div className="mx-auto max-w-3xl bg-white p-8 text-black print:p-0 print:shadow-none" id="print-area">
         <ReportHeader title={getVoucherTypeLabelWithLegacy(voucher.voucher_type)} />
-        <p className="mb-4 text-center text-sm text-gray-700">Gangni, Meherpur — General Fund</p>
 
         {/* Voucher meta */}
         <div className="mb-4 grid grid-cols-2 gap-4 text-sm">
@@ -176,23 +176,25 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
           {signers.map((s, i) => (
             <div key={i} className="text-center">
-              {/* Signature on top */}
-              <div className="flex h-14 items-end justify-center">
+              <div className="flex h-12 items-end justify-center">
                 {s.profile?.signature_url ? (
-                  <Image src={s.profile.signature_url} alt="Signature" width={224} height={56} className="max-h-14 max-w-full object-contain" />
+                  <Image src={s.profile.signature_url} alt="Signature" width={224} height={48} className="max-h-12 max-w-full object-contain" />
                 ) : (
                   <div className="border-b border-gray-400 w-full" />
                 )}
               </div>
-              {/* Seal below */}
-              <div className="relative flex h-16 items-center justify-center">
+              <div className="flex h-12 items-center justify-center">
                 {s.profile?.seal_url ? (
-                  <Image src={s.profile.seal_url} alt="Seal" width={128} height={64} className="max-h-16 max-w-full object-contain opacity-90" />
+                  <Image src={s.profile.seal_url} alt="Seal" width={128} height={48} className="max-h-12 max-w-full object-contain opacity-90" />
                 ) : null}
               </div>
-              <p className="mt-1 text-xs font-semibold">{s.label}</p>
-              <p className="text-xs text-gray-600">{s.profile?.full_name ?? '_______________'}</p>
-              <p className="text-xs text-gray-500">{s.status}</p>
+              <p className="mt-0.5 text-xs font-semibold">{s.label}</p>
+              {!s.hideDetails && (
+                <>
+                  <p className="text-xs text-gray-600">{s.profile?.full_name ?? '_______________'}</p>
+                  <p className="text-xs text-gray-500">{s.status}</p>
+                </>
+              )}
             </div>
           ))}
         </div>
