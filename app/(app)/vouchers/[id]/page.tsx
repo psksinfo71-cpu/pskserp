@@ -176,19 +176,14 @@ export default function VoucherPrintPage({ params }: { params: { id: string } })
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
           {signers.map((s, i) => (
             <div key={i} className="text-center">
-              <div className="flex h-12 items-end justify-center">
-                {s.profile?.signature_url ? (
-                  <Image src={s.profile.signature_url} alt="Signature" width={224} height={48} className="max-h-12 max-w-full object-contain" />
-                ) : (
-                  <div className="border-b border-gray-400 w-full" />
+              <div className="border-b border-gray-400 w-full mb-1" style={{ minHeight: '48px' }}>
+                {s.profile?.signature_url && (
+                  <div className="flex h-12 items-end justify-center pb-1">
+                    <Image src={s.profile.signature_url} alt="Signature" width={224} height={48} className="max-h-12 max-w-full object-contain" />
+                  </div>
                 )}
               </div>
-              <div className="flex h-12 items-center justify-center">
-                {s.profile?.seal_url ? (
-                  <Image src={s.profile.seal_url} alt="Seal" width={128} height={48} className="max-h-12 max-w-full object-contain opacity-90" />
-                ) : null}
-              </div>
-              <p className="mt-0.5 text-xs font-semibold">{s.label}</p>
+              <p className="text-xs font-semibold">{s.label}</p>
               {!s.hideDetails && (
                 <>
                   <p className="text-xs text-gray-600">{s.profile?.full_name ?? '_______________'}</p>
