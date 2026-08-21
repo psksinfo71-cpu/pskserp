@@ -168,8 +168,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Alerts */}
+      {kpis && (kpis.pendingApprovals > 0 || kpis.totalCash < 50000 || pettyCash.alert) && (
       <div className="grid gap-3 sm:grid-cols-2">
-        {kpis && kpis.pendingApprovals > 0 && (
+        {kpis.pendingApprovals > 0 && (
           <div className="flex items-center gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3">
             <AlertCircle className="h-5 w-5 shrink-0 text-warning" />
             <div className="text-sm">
@@ -178,12 +179,21 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+        {kpis.totalCash < 50000 && (
+          <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
+            <div className="text-sm">
+              <p className="font-medium text-destructive">Low cash alert</p>
+              <p className="text-xs text-muted-foreground">Cash in hand below ৳50,000</p>
+            </div>
+          </div>
+        )}
         {pettyCash.alert && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 sm:col-span-2">
             <div className="flex items-center gap-3">
               <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
               <div className="text-sm">
-                <p className="font-medium text-destructive">Low cash alert - Petty Cash at {pettyCash.burnRate.toFixed(1)}% used</p>
+                <p className="font-medium text-destructive">Petty Cash at {pettyCash.burnRate.toFixed(1)}% used</p>
                 <p className="text-xs text-muted-foreground">{formatCurrency(pettyCash.totalExpenses)} of {formatCurrency(PETTY_CASH_MAX)} spent ({formatCurrency(pettyCash.balance)} remaining)</p>
               </div>
             </div>
@@ -193,6 +203,7 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Petty Cash Requisition Modal */}
       <PettyCashRequisition
