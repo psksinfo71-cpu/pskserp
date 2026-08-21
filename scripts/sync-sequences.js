@@ -22,9 +22,16 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 async function main() {
   console.log("Connecting to Supabase at:", supabaseUrl);
 
+  const authEmail = process.env.SUPABASE_SCRIPT_EMAIL || env.SUPABASE_SCRIPT_EMAIL;
+  const authPassword = process.env.SUPABASE_SCRIPT_PASSWORD || env.SUPABASE_SCRIPT_PASSWORD;
+  if (!authEmail || !authPassword) {
+    console.error("Set SUPABASE_SCRIPT_EMAIL and SUPABASE_SCRIPT_PASSWORD in .env or environment");
+    process.exit(1);
+  }
+
   const authRes = await supabase.auth.signInWithPassword({
-    email: "psksinfo71@gmail.com",
-    password: "Admin@2026",
+    email: authEmail,
+    password: authPassword,
   });
 
   if (authRes.error) {

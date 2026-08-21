@@ -29,7 +29,6 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
     .eq('id', userId)
     .maybeSingle();
   if (error) {
-    console.error('Failed to load profile:', error.message);
     return null;
   }
   return data as Profile | null;
@@ -38,20 +37,18 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
 async function fetchUserProjects(userId: string, role: Role | undefined): Promise<Project[]> {
   let projects: Project[] = [];
 
-  if (role === 'super_admin') {
+    if (role === 'super_admin') {
     const { data, error } = await supabase
       .from('projects')
       .select('*')
       .eq('is_active', true)
       .order('name');
-    if (error) console.error('Failed to load projects (admin):', error.message);
     projects = (data ?? []) as Project[];
   } else {
     const { data, error } = await supabase
       .from('user_projects')
       .select('project_id, project:projects(*)')
       .eq('user_id', userId);
-    if (error) console.error('Failed to load user_projects:', error.message);
     projects = (data ?? [])
       .map((row) => row.project as unknown as Project)
       .filter((p) => p && p.is_active)
@@ -101,10 +98,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(newSession);
         if (newSession?.user) {
           await initUser(newSession.user.id);
-          await supabase
-            .from('profiles')
-            .update({ last_login_at: new Date().toISOString() })
-            .eq('id', newSession.user.id);
         } else {
           setProfile(null);
           setUserProjects([]);

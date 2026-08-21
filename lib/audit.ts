@@ -89,9 +89,9 @@ export async function notifyUser(params: NotifyParams) {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      console.error('notify failed:', err?.error ?? res.status);
+      void err;
     }
-  } catch (e) {
-    console.error('notify error:', (e as Error).message);
+  } catch {
+    // notify failed silently
   }
 }

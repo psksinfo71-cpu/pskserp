@@ -1,10 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-};
+const ALLOWED_ORIGINS = ["https://psks-erp.vercel.app", "http://localhost:3000"];
+
+function getCorsHeaders(origin: string | null) {
+  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  };
+}
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -21,6 +26,9 @@ interface NotifyBody {
 }
 
 Deno.serve(async (req: Request) => {
+  const origin = req.headers.get("Origin");
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -33,13 +41,25 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Verify caller is authenticated
     const callerRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
       headers: { Authorization: authHeader, apikey: anonKey },
     });
     if (!callerRes.ok) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const caller = await callerRes.json();
+    const profileRes = await fetch(
+      `${supabaseUrl}/rest/v1/profiles?id=eq.${caller.id}&select=role,is_active`,
+      { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } }
+    );
+    const profiles = await profileRes.json();
+    const callerProfile = profiles?.[0];
+    if (!callerProfile?.is_active || !["super_admin", "finance_manager", "head_of_finance", "accounts_manager"].includes(callerProfile.role)) {
+      return new Response(JSON.stringify({ error: "Insufficient permissions to send notifications" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -50,18 +70,24 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const sanitizeLink = (link: string): string => {
+      if (!link) return "";
+      if (/^https?:\/\//.test(link) && !link.includes(new URL(supabaseUrl).hostname)) return "";
+      if (link.startsWith("javascript:")) return "";
+      return link.replace(/[<>"']/g, "");
+    };
+
     let userIds: string[] = [];
 
     if (body.to === "approvers") {
-      // Fan out to all roles that can approve vouchers
       const res = await fetch(
-        `${supabaseUrl}/rest/v1/profiles?select=id&role=in.(super_admin,finance_manager,branch_manager)&is_active=eq.true`,
+        `${supabaseUrl}/rest/v1/profiles?select=id&role=in.(super_admin,finance_manager,head_of_finance,accounts_manager)&is_active=eq.true`,
         { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } }
       );
       const rows = await res.json();
       userIds = (rows as { id: string }[]).map((r) => r.id);
     } else if (body.user_ids && body.user_ids.length > 0) {
-      userIds = body.user_ids;
+      userIds = body.user_ids.slice(0, 50);
     } else {
       return new Response(JSON.stringify({ error: "Provide to=approvers or user_ids" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -70,10 +96,10 @@ Deno.serve(async (req: Request) => {
 
     const rows = userIds.map((uid) => ({
       user_id: uid,
-      title: body.title,
-      message: body.message,
+      title: body.title.slice(0, 200),
+      message: body.message.slice(0, 1000),
       type: body.type ?? "system",
-      link: body.link ?? "",
+      link: sanitizeLink(body.link ?? ""),
     }));
 
     const insertRes = await fetch(`${supabaseUrl}/rest/v1/notifications`, {

@@ -104,8 +104,8 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/svg+xml'].includes(file.type)) {
-      toast.error('Please select a PNG, JPG, or SVG logo');
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      toast.error('Please select a PNG, JPG, or WebP logo');
       return;
     }
     if (file.size > 2 * 1024 * 1024) {

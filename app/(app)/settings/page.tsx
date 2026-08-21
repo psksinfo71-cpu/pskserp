@@ -50,16 +50,22 @@ export default function SettingsPage() {
 
   const update = (key: string, value: string) => setSettings((prev) => ({ ...prev, [key]: value }));
 
+  const ALLOWED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
+      toast.error('Only PNG, JPEG and WebP files are allowed');
+      return;
+    }
     if (file.size > 2 * 1024 * 1024) {
       toast.error('Logo must be under 2MB');
       return;
     }
     setUploadingLogo(true);
     try {
-      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'png';
+      const ext = file.type === 'image/png' ? 'png' : file.type === 'image/jpeg' ? 'jpg' : 'webp';
       const path = `org-logo.${ext}`;
       const { error: upErr } = await supabase.storage.from('org-logos').upload(path, file, { upsert: true });
       if (upErr) throw upErr;

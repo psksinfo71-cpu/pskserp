@@ -3,10 +3,11 @@
 export function exportToCSV(filename: string, headers: string[], rows: (string | number)[][]) {
   const escape = (v: string | number) => {
     const s = String(v ?? '');
-    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
-      return `"${s.replace(/"/g, '""')}"`;
+    const trimmed = s.replace(/^[=+\-@\t\r]/, ' ');
+    if (trimmed.includes(',') || trimmed.includes('"') || trimmed.includes('\n')) {
+      return `"${trimmed.replace(/"/g, '""')}"`;
     }
-    return s;
+    return trimmed;
   };
   const csv = [headers.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n');
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -35,12 +36,18 @@ export function exportToExcel(filename: string, headers: string[], rows: (string
   URL.revokeObjectURL(url);
 }
 
+function escapeHTML(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 export function printReport(title: string, bodyHTML: string) {
   const w = window.open('', '_blank', 'width=900,height=700');
   if (!w) return;
   const logoUrl = typeof window !== 'undefined' ? window.localStorage.getItem('psks-print-logo-url') : null;
-  const logo = logoUrl ? `<img src="${logoUrl}" alt="Logo" class="print-logo" />` : '';
-  w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
+  const safeLogoUrl = logoUrl && logoUrl.startsWith('http') ? logoUrl : '';
+  const logo = safeLogoUrl ? `<img src="${escapeHTML(safeLogoUrl)}" alt="Logo" class="print-logo" />` : '';
+  const safeTitle = escapeHTML(title);
+  w.document.write(`<!DOCTYPE html><html><head><title>${safeTitle}</title>
     <style>
       body { font-family: Arial, Helvetica, sans-serif; padding: 24px; color: #1f2937; }
       h1 { font-size: 18px; margin: 0 0 4px; }

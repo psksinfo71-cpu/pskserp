@@ -27,19 +27,17 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 async function main() {
   console.log("Connecting to Supabase at:", supabaseUrl);
 
-  // Authenticate as Super Admin or fallback user
-  let authRes = await supabase.auth.signInWithPassword({
-    email: "psksinfo71@gmail.com",
-    password: "Admin@2026",
-  });
-
-  if (authRes.error) {
-    console.log("Super admin login failed, trying accountant user...");
-    authRes = await supabase.auth.signInWithPassword({
-      email: "acc@psks.local",
-      password: "Acc@2026",
-    });
+  const authEmail = process.env.SUPABASE_SCRIPT_EMAIL || env.SUPABASE_SCRIPT_EMAIL;
+  const authPassword = process.env.SUPABASE_SCRIPT_PASSWORD || env.SUPABASE_SCRIPT_PASSWORD;
+  if (!authEmail || !authPassword) {
+    console.error("Set SUPABASE_SCRIPT_EMAIL and SUPABASE_SCRIPT_PASSWORD in .env or environment");
+    process.exit(1);
   }
+
+  const authRes = await supabase.auth.signInWithPassword({
+    email: authEmail,
+    password: authPassword,
+  });
 
   if (authRes.error) {
     console.error("Authentication failed:", authRes.error.message);

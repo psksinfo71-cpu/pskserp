@@ -157,7 +157,7 @@ export default function UsersPage() {
         toast.success('User updated');
       } else {
         if (!form.email || !form.password || !form.full_name) { toast.error('Email, password and name are required'); setSaving(false); return; }
-        if (form.password.length < 6) { toast.error('Password must be at least 6 characters'); setSaving(false); return; }
+        if (form.password.length < 8) { toast.error('Password must be at least 8 characters'); setSaving(false); return; }
         const apiUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/manage-user`;
         const { data: session } = await supabase.auth.getSession();
         const res = await fetch(apiUrl, {
@@ -241,12 +241,15 @@ export default function UsersPage() {
 
   const openSignDialog = (u: Profile) => { setSigTarget(u); setSigOpen(true); };
 
+  const ALLOWED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
   const uploadFile = async (file: File, field: 'signature_url' | 'seal_url') => {
     if (!sigTarget) return;
     if (file.size > 2 * 1024 * 1024) { toast.error('File must be under 2MB'); return; }
+    if (!ALLOWED_UPLOAD_TYPES.includes(file.type)) { toast.error('Only PNG, JPEG, GIF and WebP files are allowed'); return; }
     setUploading(true);
     try {
-      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'png';
+      const ext = file.type === 'image/png' ? 'png' : file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/gif' ? 'gif' : 'webp';
       const path = `${sigTarget.id}/${field}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from('user-assets')

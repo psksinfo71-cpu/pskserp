@@ -1,10 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-};
+const ALLOWED_ORIGINS = ["https://psks-erp.vercel.app", "http://localhost:3000"];
+
+function getCorsHeaders(origin: string | null) {
+  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  };
+}
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -59,6 +64,9 @@ async function verifySuperAdmin(authHeader: string): Promise<{ ok: boolean; call
 }
 
 Deno.serve(async (req: Request) => {
+  const origin = req.headers.get("Origin");
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -89,6 +97,25 @@ Deno.serve(async (req: Request) => {
 
       if (!email || !password || !full_name || !primaryRole) {
         return new Response(JSON.stringify({ error: "email, password, full_name and role are required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (password.length < 8) {
+        return new Response(JSON.stringify({ error: "Password must be at least 8 characters" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        return new Response(JSON.stringify({ error: "Invalid email format" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const ALLOWED_ROLES = ["super_admin", "executive_director", "deputy_executive_director", "head_of_finance", "finance_manager", "accounts_manager", "accountant", "project_manager", "project_staff", "branch_manager", "auditor"];
+      if (!ALLOWED_ROLES.includes(primaryRole)) {
+        return new Response(JSON.stringify({ error: "Invalid role" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -172,10 +199,17 @@ Deno.serve(async (req: Request) => {
 
       // Prevent a super_admin from deleting/locking themselves inadvertently is handled client-side;
       // here we just apply the update.
-      const updatePayload: Record<string, string> = {};
+      const updatePayload: Record<string, string | object> = {};
       if (email) updatePayload.email = email.trim().toLowerCase();
-      if (full_name) updatePayload.user_metadata = JSON.stringify({ full_name });
-      if (password) updatePayload.password = password;
+      if (full_name) updatePayload.user_metadata = { full_name };
+      if (password) {
+        if (password.length < 8) {
+          return new Response(JSON.stringify({ error: "Password must be at least 8 characters" }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        updatePayload.password = password;
+      }
 
       if (Object.keys(updatePayload).length > 0) {
         const updateRes = await fetch(`${supabaseUrl}/auth/v1/admin/users/${user_id}`, {
