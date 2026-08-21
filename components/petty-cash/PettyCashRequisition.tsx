@@ -183,22 +183,25 @@ export function PettyCashRequisition({ open, onOpenChange, expenses, totalExpens
           {/* Signature Footer */}
           <div className="mt-8 flex justify-between px-4">
             <div className="w-1/3 text-center">
-              <div className="mt-12 border-t border-foreground pt-2">
-                <p className="mt-1 text-[9px] font-medium text-primary">Prepared By</p>
+              <div className="mt-12 pt-2">
+                <div className="mx-auto mb-2 w-3/5 border-t border-foreground"></div>
+                <p className="text-[9px] font-medium text-primary">Prepared By</p>
                 <p className="text-[10px] font-bold">Md. Osman Goni</p>
                 <p className="text-[9px] text-muted-foreground">Manager - Finance</p>
               </div>
             </div>
             <div className="w-1/3 text-center">
-              <div className="mt-12 border-t border-foreground pt-2">
-                <p className="mt-1 text-[9px] font-medium text-primary">Checked By</p>
+              <div className="mt-12 pt-2">
+                <div className="mx-auto mb-2 w-3/5 border-t border-foreground"></div>
+                <p className="text-[9px] font-medium text-primary">Checked By</p>
                 <p className="text-[10px] font-bold">Md. Mizanur Rahman</p>
                 <p className="text-[9px] text-muted-foreground">Deputy Director - Finance &amp; Admin</p>
               </div>
             </div>
             <div className="w-1/3 text-center">
-              <div className="mt-12 border-t border-foreground pt-2">
-                <p className="mt-1 text-[9px] font-medium text-primary">Approved By</p>
+              <div className="mt-12 pt-2">
+                <div className="mx-auto mb-2 w-3/5 border-t border-foreground"></div>
+                <p className="text-[9px] font-medium text-primary">Approved By</p>
                 <p className="text-[10px] font-bold">Md. Kamruzzaman</p>
                 <p className="text-[9px] text-muted-foreground">Deputy Executive Director</p>
               </div>
