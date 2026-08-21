@@ -136,11 +136,16 @@ export default function DashboardPage() {
         title={`Welcome, ${profile?.full_name?.split(' ')[0] ?? ''}`}
         description="Financial overview of your organization"
         actions={
-          <Button asChild variant="outline" size="sm">
-            <Link href="/vouchers">
-              <FileText className="mr-2 h-4 w-4" /> New Voucher
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPettyCashOpen(true)}>
+              <Receipt className="mr-2 h-4 w-4" /> Petty Cash Requisition
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/vouchers">
+                <FileText className="mr-2 h-4 w-4" /> New Voucher
+              </Link>
+            </Button>
+          </div>
         }
       />
 
