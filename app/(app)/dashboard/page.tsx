@@ -197,7 +197,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground">{formatCurrency(pettyCash.totalExpenses)} of {formatCurrency(PETTY_CASH_MAX)} spent ({formatCurrency(pettyCash.balance)} remaining)</p>
               </div>
             </div>
-            <Button variant="destructive" size="sm" className="shrink-0" onClick={() => setPettyCashOpen(true)}>
+            <Button variant="outline" size="sm" className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10" onClick={() => setPettyCashOpen(true)}>
               <Receipt className="mr-1.5 h-3.5 w-3.5" /> Petty Cash Requisition
             </Button>
           </div>
